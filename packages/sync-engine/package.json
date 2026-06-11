@@ -1,0 +1,21 @@
+{
+  "name": "@prehospital-ems/sync-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dexie": "^3.2.7",
+    "@prehospital-ems/fhir-contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.3",
+    "typescript": "^5.8.3",
+    "fake-indexeddb": "^6.0.0"
+  }
+}
