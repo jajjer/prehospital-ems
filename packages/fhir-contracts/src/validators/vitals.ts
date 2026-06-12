@@ -15,6 +15,9 @@ export function validateVitals(input: VitalsInput): ValidationError[] {
   if (input.rr < 0 || input.rr > 60) {
     errors.push({ field: "rr", message: "RR must be 0–60 breaths/min" });
   }
+  if (input.temp !== 0 && (input.temp < 24 || input.temp > 45)) {
+    errors.push({ field: "temp", message: "Temperature must be 24–45 °C" });
+  }
   if (input.bpSystolic < 0 || input.bpSystolic > 300) {
     errors.push({ field: "bpSystolic", message: "Systolic BP must be 0–300 mmHg" });
   }

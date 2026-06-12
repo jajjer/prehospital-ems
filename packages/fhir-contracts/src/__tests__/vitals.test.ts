@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { validateVitals, assertValidVitals } from "../validators/vitals.js";
 import { buildVitalObservations } from "../builders/observation.js";
 
-const VALID_VITALS = { hr: 80, rr: 16, bpSystolic: 120, bpDiastolic: 80, spo2: 98, gcs: 15 };
+const VALID_VITALS = { hr: 80, rr: 16, bpSystolic: 120, bpDiastolic: 80, temp: 37.0, spo2: 98, gcs: 15 };
 
 describe("validateVitals", () => {
   it("returns no errors for valid vitals", () => {
@@ -49,6 +49,15 @@ describe("validateVitals", () => {
     expect(errors.some((e) => e.field === "bpDiastolic")).toBe(true);
   });
 
+  it("rejects temp outside 24–45 when non-zero", () => {
+    expect(validateVitals({ ...VALID_VITALS, temp: 23 }).some((e) => e.field === "temp")).toBe(true);
+    expect(validateVitals({ ...VALID_VITALS, temp: 46 }).some((e) => e.field === "temp")).toBe(true);
+  });
+
+  it("accepts temp = 0 (not measured)", () => {
+    expect(validateVitals({ ...VALID_VITALS, temp: 0 })).toHaveLength(0);
+  });
+
   it("can return multiple errors", () => {
     const errors = validateVitals({ hr: -1, rr: -1, bpSystolic: 0, bpDiastolic: 0, spo2: 101, gcs: 16 });
     expect(errors.length).toBeGreaterThan(1);
@@ -71,9 +80,12 @@ describe("buildVitalObservations", () => {
     encounterServerUUID: "encounter-srv-uuid",
   };
 
-  it("returns 6 observations", () => {
-    const obs = buildVitalObservations(VALID_VITALS, ctx);
-    expect(obs).toHaveLength(6);
+  it("returns 7 observations when temp is non-zero", () => {
+    expect(buildVitalObservations(VALID_VITALS, ctx)).toHaveLength(7);
+  });
+
+  it("returns 6 observations when temp is 0 (not measured)", () => {
+    expect(buildVitalObservations({ ...VALID_VITALS, temp: 0 }, ctx)).toHaveLength(6);
   });
 
   it("all observations reference the patient", () => {

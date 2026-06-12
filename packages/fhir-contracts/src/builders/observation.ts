@@ -32,6 +32,12 @@ const VITAL_CONCEPTS = {
     loinc: "8462-4",
     display: "Diastolic blood pressure",
   },
+  TEMP: {
+    uuid: "5088AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ciel: "5088",
+    loinc: "8310-5",
+    display: "Temperature (C)",
+  },
   SPO2: {
     uuid: "5092AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     ciel: "5092",
@@ -56,6 +62,8 @@ export interface VitalsInput {
   bpSystolic: number;
   /** Diastolic blood pressure in mmHg (0–200) */
   bpDiastolic: number;
+  /** Temperature in °C (0 = not measured) */
+  temp: number;
   /** SpO2 percentage (0–100) */
   spo2: number;
   /** GCS total (3–15) */
@@ -101,7 +109,7 @@ export function buildVitalObservations(
     };
   }
 
-  return [
+  const observations = [
     obs(VITAL_CONCEPTS.HR,           vitals.hr,           "/min"),
     obs(VITAL_CONCEPTS.RR,           vitals.rr,           "/min"),
     obs(VITAL_CONCEPTS.BP_SYSTOLIC,  vitals.bpSystolic,   "mm[Hg]"),
@@ -109,4 +117,10 @@ export function buildVitalObservations(
     obs(VITAL_CONCEPTS.SPO2,         vitals.spo2,         "%"),
     obs(VITAL_CONCEPTS.GCS_TOTAL,    vitals.gcs,          "{score}"),
   ];
+  // Temperature is optional — skip the observation if not measured (value = 0).
+  // Posting 0°C would display as a valid reading in the OpenMRS chart.
+  if (vitals.temp > 0) {
+    observations.splice(2, 0, obs(VITAL_CONCEPTS.TEMP, vitals.temp, "Cel"));
+  }
+  return observations;
 }

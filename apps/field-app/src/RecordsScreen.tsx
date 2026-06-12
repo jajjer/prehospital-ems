@@ -95,6 +95,7 @@ function RecordCard({ record }: { record: EnrichedEntry }) {
         <VitalChip label="HR" value={record.vitals.hr} unit="bpm" low={60} high={100} />
         <VitalChip label="BP" value={`${record.vitals.bpSystolic}/${record.vitals.bpDiastolic}`} unit="mmHg" />
         <VitalChip label="RR" value={record.vitals.rr} unit="/min" low={12} high={20} />
+        {record.vitals.temp > 0 && <VitalChip label="T" value={record.vitals.temp} unit="°C" low={36.1} high={37.5} />}
         <VitalChip label="SpO₂" value={record.vitals.spo2} unit="%" low={95} high={100} />
         <VitalChip label="GCS" value={record.vitals.gcs} unit="" low={13} high={15} />
       </div>
