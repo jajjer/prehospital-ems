@@ -7,7 +7,7 @@ import {
   validateVitals,
   type VitalsInput,
 } from "@prehospital-ems/fhir-contracts";
-import { enqueue } from "@prehospital-ems/sync-engine";
+import { enqueue, flush } from "@prehospital-ems/sync-engine";
 
 interface Props {
   onSubmit: () => void;
@@ -82,6 +82,10 @@ export function CaptureForm({ onSubmit }: Props) {
     }
 
     onSubmit();
+
+    // Fire-and-forget flush — if online, sync immediately; if not, the
+    // online/visibilitychange listeners in syncWorker will pick it up later.
+    void flush();
   }
 
   return (

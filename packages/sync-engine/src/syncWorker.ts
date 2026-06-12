@@ -110,7 +110,7 @@ async function processItem(item: WriteQueueItem): Promise<void> {
   }
 
   if (response.ok) {
-    const resource = await response.json() as { id?: string };
+    const resource = await response.json() as { id?: string; meta?: { lastUpdated?: string } };
     const serverUUID = resource.id;
 
     // Store identity map entry for Patients and Encounters
@@ -130,7 +130,7 @@ async function processItem(item: WriteQueueItem): Promise<void> {
     }
 
     // Conflict detection hook (log only in M1)
-    const serverLastUpdated = (await response.clone().json() as { meta?: { lastUpdated?: string } }).meta?.lastUpdated;
+    const serverLastUpdated = resource.meta?.lastUpdated;
     if (serverLastUpdated && item.enqueuedAt) {
       const serverTs = new Date(serverLastUpdated).getTime();
       if (serverTs > item.enqueuedAt) {
