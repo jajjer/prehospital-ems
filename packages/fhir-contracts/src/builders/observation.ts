@@ -1,15 +1,44 @@
 import type { Observation } from "fhir/r4";
 
+const CIEL = "https://cielterminology.org";
 const LOINC = "http://loinc.org";
+const UCUM = "http://unitsofmeasure.org";
 
-// CIEL/LOINC codes for WHO prehospital vitals (5 required for M1)
-const VITAL_CODES = {
-  HR: { code: "8867-4", display: "Heart rate" },
-  RR: { code: "9279-1", display: "Respiratory rate" },
-  // Systolic BP (diastolic added via component in full form; M1 uses systolic only)
-  BP_SYSTOLIC: { code: "8480-6", display: "Systolic blood pressure" },
-  SPO2: { code: "2708-6", display: "Oxygen saturation in Arterial blood" },
-  GCS_TOTAL: { code: "9269-2", display: "Glasgow coma score total" },
+// OpenMRS concept UUIDs for WHO prehospital vitals.
+// Format: CIEL numeric ID padded with A's to 36 chars total (e.g. "5087" + 32 A's).
+// GCS concept was created manually in the local instance — UUID may differ per deployment.
+const VITAL_CONCEPTS = {
+  HR: {
+    uuid: "5087AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ciel: "5087",
+    loinc: "8867-4",
+    display: "Pulse",
+  },
+  RR: {
+    uuid: "5242AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ciel: "5242",
+    loinc: "9279-1",
+    display: "Respiratory rate",
+  },
+  BP_SYSTOLIC: {
+    uuid: "5085AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ciel: "5085",
+    loinc: "8480-6",
+    display: "Systolic blood pressure",
+  },
+  SPO2: {
+    uuid: "5092AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ciel: "5092",
+    loinc: "2708-6",
+    display: "Arterial blood oxygen saturation (pulse oximeter)",
+  },
+  GCS_TOTAL: {
+    // Created manually in this instance; CIEL 162643 if the full CIEL dict is loaded.
+    uuid: "8a7ff9be-79af-4485-9499-094597f01335",
+    ciel: "162643",
+    loinc: "9269-2",
+    display: "Glasgow coma score total",
+  },
 } as const;
 
 export interface VitalsInput {
@@ -39,25 +68,36 @@ export function buildVitalObservations(
   const subject = { reference: `Patient/${ctx.patientServerUUID}`, type: "Patient" as const };
   const encounter = { reference: `Encounter/${ctx.encounterServerUUID}`, type: "Encounter" as const };
 
-  function base(code: (typeof VITAL_CODES)[keyof typeof VITAL_CODES], value: number, unit: string, system = "http://unitsofmeasure.org"): Observation {
+  function obs(
+    concept: (typeof VITAL_CONCEPTS)[keyof typeof VITAL_CONCEPTS],
+    value: number,
+    unit: string
+  ): Observation {
     return {
       resourceType: "Observation",
       status: "final",
-      code: { coding: [{ system: LOINC, code: code.code, display: code.display }] },
+      code: {
+        coding: [
+          // Primary: OpenMRS concept UUID (no system = direct UUID lookup in fhir2)
+          { code: concept.uuid, display: concept.display },
+          // Secondary: CIEL terminology for concept mapping resolution
+          { system: CIEL, code: concept.ciel },
+          // Tertiary: LOINC for downstream interoperability
+          { system: LOINC, code: concept.loinc },
+        ],
+      },
       subject,
       encounter,
       effectiveDateTime,
-      valueQuantity: { value, unit, system, code: unit },
+      valueQuantity: { value, unit, system: UCUM, code: unit },
     };
   }
 
   return [
-    base(VITAL_CODES.HR, vitals.hr, "/min"),
-    base(VITAL_CODES.RR, vitals.rr, "/min"),
-    base(VITAL_CODES.BP_SYSTOLIC, vitals.bpSystolic, "mm[Hg]"),
-    base(VITAL_CODES.SPO2, vitals.spo2, "%"),
-    {
-      ...base(VITAL_CODES.GCS_TOTAL, vitals.gcs, "{score}", "http://unitsofmeasure.org"),
-    },
+    obs(VITAL_CONCEPTS.HR,          vitals.hr,          "/min"),
+    obs(VITAL_CONCEPTS.RR,          vitals.rr,          "/min"),
+    obs(VITAL_CONCEPTS.BP_SYSTOLIC, vitals.bpSystolic,  "mm[Hg]"),
+    obs(VITAL_CONCEPTS.SPO2,        vitals.spo2,        "%"),
+    obs(VITAL_CONCEPTS.GCS_TOTAL,   vitals.gcs,         "{score}"),
   ];
 }

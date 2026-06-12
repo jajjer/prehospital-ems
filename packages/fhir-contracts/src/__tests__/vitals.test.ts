@@ -85,10 +85,18 @@ describe("buildVitalObservations", () => {
     });
   });
 
-  it("all observations use LOINC codes", () => {
+  it("all observations have three-tier coding (OpenMRS UUID, CIEL, LOINC)", () => {
     const obs = buildVitalObservations(VALID_VITALS, ctx);
     obs.forEach((o) => {
-      expect(o.code.coding?.[0]?.system).toBe("http://loinc.org");
+      const codings = o.code.coding ?? [];
+      expect(codings).toHaveLength(3);
+      // Primary: OpenMRS concept UUID (no system)
+      expect(codings[0]?.system).toBeUndefined();
+      expect(codings[0]?.code).toBeTruthy();
+      // Secondary: CIEL
+      expect(codings[1]?.system).toBe("https://cielterminology.org");
+      // Tertiary: LOINC
+      expect(codings[2]?.system).toBe("http://loinc.org");
     });
   });
 });
