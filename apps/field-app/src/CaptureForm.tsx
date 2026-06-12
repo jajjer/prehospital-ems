@@ -4,6 +4,7 @@ import {
   buildProvisionalPatient,
   buildPrehospitalEncounter,
   buildVitalObservations,
+  buildChiefComplaintCondition,
   validateVitals,
   type VitalsInput,
   type PatientSex,
@@ -77,6 +78,14 @@ export function CaptureForm({ onSubmit }: Props) {
     await enqueue({ id: crypto.randomUUID(), resourceType: "Encounter",  resourceId: provisionalEncounterId, body: JSON.stringify({ ...encounter, id: provisionalEncounterId }), patientId: mrn });
     for (const obs of observations) {
       await enqueue({ id: crypto.randomUUID(), resourceType: "Observation", resourceId: crypto.randomUUID(), body: JSON.stringify(obs), patientId: mrn, encounterId: provisionalEncounterId });
+    }
+
+    if (complaint.trim()) {
+      const condition = buildChiefComplaintCondition(complaint.trim(), {
+        patientServerUUID: mrn,
+        encounterServerUUID: provisionalEncounterId,
+      });
+      await enqueue({ id: crypto.randomUUID(), resourceType: "Condition", resourceId: crypto.randomUUID(), body: JSON.stringify(condition), patientId: mrn, encounterId: provisionalEncounterId });
     }
 
     await logCapture({

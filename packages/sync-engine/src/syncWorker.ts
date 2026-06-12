@@ -52,12 +52,14 @@ export async function flush(): Promise<void> {
       .orderBy("enqueuedAt")
       .toArray();
 
-    // Process in order — Patients first, Encounters second, Observations last
+    // Process in order — Patients first, Encounters second, then dependents
     const patients = ordered.filter((i) => i.resourceType === "Patient");
     const encounters = ordered.filter((i) => i.resourceType === "Encounter");
-    const observations = ordered.filter((i) => i.resourceType === "Observation");
+    const dependents = ordered.filter(
+      (i) => i.resourceType === "Observation" || i.resourceType === "Condition"
+    );
 
-    for (const item of [...patients, ...encounters, ...observations]) {
+    for (const item of [...patients, ...encounters, ...dependents]) {
       await processItem(item);
     }
   } finally {
@@ -91,7 +93,7 @@ async function processItem(item: WriteQueueItem): Promise<void> {
 
   // Resolve patient/encounter references from identity map before POST
   let body = item.body;
-  if (item.resourceType === "Encounter" || item.resourceType === "Observation") {
+  if (item.resourceType === "Encounter" || item.resourceType === "Observation" || item.resourceType === "Condition") {
     body = await resolveReferences(body);
   }
 

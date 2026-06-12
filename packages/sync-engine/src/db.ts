@@ -2,7 +2,7 @@ import Dexie, { type Table } from "dexie";
 
 export interface WriteQueueItem {
   id: string;
-  resourceType: "Patient" | "Encounter" | "Observation";
+  resourceType: "Patient" | "Encounter" | "Observation" | "Condition";
   resourceId: string;
   body: string;
   enqueuedAt: number;

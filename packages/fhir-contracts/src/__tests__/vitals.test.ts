@@ -59,7 +59,7 @@ describe("validateVitals", () => {
   });
 
   it("can return multiple errors", () => {
-    const errors = validateVitals({ hr: -1, rr: -1, bpSystolic: 0, bpDiastolic: 0, spo2: 101, gcs: 16 });
+    const errors = validateVitals({ hr: -1, rr: -1, bpSystolic: 0, bpDiastolic: 0, temp: 0, spo2: 101, gcs: 16 });
     expect(errors.length).toBeGreaterThan(1);
   });
 });
