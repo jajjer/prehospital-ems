@@ -1,15 +1,35 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { initSyncWorker } from "@prehospital-ems/sync-engine";
 import { CaptureForm } from "./CaptureForm.js";
 import { StatusBar } from "./StatusBar.js";
+import { LoginScreen } from "./LoginScreen.js";
 import { C, FONT } from "./theme.js";
+import { FHIR_BASE } from "./config.js";
 
 export function App() {
+  const [authHeader, setAuthHeader] = useState<string | null>(
+    () => sessionStorage.getItem("ems_auth")
+  );
   const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    if (authHeader) {
+      initSyncWorker({ fhirBaseUrl: FHIR_BASE, authHeader });
+    }
+  }, [authHeader]);
+
+  if (!authHeader) {
+    return <LoginScreen onLogin={(auth) => setAuthHeader(auth)} />;
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem("ems_auth");
+    setAuthHeader(null);
+  }
 
   return (
     <div style={{ minHeight: "100dvh", background: C.bg, color: C.text, fontFamily: FONT }}>
-      <StatusBar />
-
+      <StatusBar onLogout={handleLogout} />
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 1rem 2rem" }}>
         {submitted ? (
           <SuccessScreen onNew={() => setSubmitted(false)} />
@@ -42,7 +62,7 @@ function SuccessScreen({ onNew }: { onNew: () => void }) {
         background: C.primary, color: "#fff", border: "none",
         borderRadius: 8, padding: "0.75rem 2rem",
         fontSize: "0.9375rem", fontWeight: 600, cursor: "pointer",
-        letterSpacing: "0.01em",
+        letterSpacing: "0.01em", fontFamily: FONT,
       }}>
         New patient
       </button>

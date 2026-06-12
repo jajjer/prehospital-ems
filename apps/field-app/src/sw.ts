@@ -10,9 +10,13 @@ cleanupOutdatedCaches();
 
 // Background Sync handler — fires when the device reconnects after registering
 // a sync tag via SyncManager.register("fhir-flush").
-// We can't call flush() directly here (Dexie lives in the client context),
-// so we post a FLUSH message to all active window clients instead.
-self.addEventListener("sync", (event) => {
+// SyncEvent is a Chrome-only API not in the standard TypeScript DOM lib.
+interface SyncEvent extends ExtendableEvent { readonly tag: string }
+interface SyncEventMap { sync: SyncEvent }
+type SyncableWorker = typeof self & {
+  addEventListener<K extends keyof SyncEventMap>(type: K, listener: (ev: SyncEventMap[K]) => void): void;
+};
+(self as SyncableWorker).addEventListener("sync", (event) => {
   if (event.tag === "fhir-flush") {
     event.waitUntil(
       self.clients

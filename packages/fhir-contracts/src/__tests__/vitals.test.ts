@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { validateVitals, assertValidVitals } from "../validators/vitals.js";
 import { buildVitalObservations } from "../builders/observation.js";
 
-const VALID_VITALS = { hr: 80, rr: 16, bpSystolic: 120, spo2: 98, gcs: 15 };
+const VALID_VITALS = { hr: 80, rr: 16, bpSystolic: 120, bpDiastolic: 80, spo2: 98, gcs: 15 };
 
 describe("validateVitals", () => {
   it("returns no errors for valid vitals", () => {
@@ -44,8 +44,13 @@ describe("validateVitals", () => {
     expect(validateVitals({ ...VALID_VITALS, gcs: 15 })).toHaveLength(0);
   });
 
+  it("rejects diastolic BP > 200", () => {
+    const errors = validateVitals({ ...VALID_VITALS, bpDiastolic: 201 });
+    expect(errors.some((e) => e.field === "bpDiastolic")).toBe(true);
+  });
+
   it("can return multiple errors", () => {
-    const errors = validateVitals({ hr: -1, rr: -1, bpSystolic: 0, spo2: 101, gcs: 16 });
+    const errors = validateVitals({ hr: -1, rr: -1, bpSystolic: 0, bpDiastolic: 0, spo2: 101, gcs: 16 });
     expect(errors.length).toBeGreaterThan(1);
   });
 });
@@ -66,9 +71,9 @@ describe("buildVitalObservations", () => {
     encounterServerUUID: "encounter-srv-uuid",
   };
 
-  it("returns 5 observations", () => {
+  it("returns 6 observations", () => {
     const obs = buildVitalObservations(VALID_VITALS, ctx);
-    expect(obs).toHaveLength(5);
+    expect(obs).toHaveLength(6);
   });
 
   it("all observations reference the patient", () => {

@@ -27,14 +27,15 @@ interface VitalMeta {
 }
 
 const VITALS: VitalMeta[] = [
-  { key: "hr",         label: "Heart Rate",   unit: "bpm",   low: 60,  high: 100, step: 1,  min: 0,   max: 300 },
-  { key: "rr",         label: "Resp. Rate",   unit: "/min",  low: 12,  high: 20,  step: 1,  min: 0,   max: 60  },
-  { key: "bpSystolic", label: "Systolic BP",  unit: "mmHg",  low: 90,  high: 140, step: 1,  min: 0,   max: 300 },
-  { key: "spo2",       label: "SpO₂",         unit: "%",     low: 95,  high: 100, step: 1,  min: 0,   max: 100 },
-  { key: "gcs",        label: "GCS Total",    unit: "pts",   low: 13,  high: 15,  step: 1,  min: 3,   max: 15  },
+  { key: "hr",          label: "Heart Rate",    unit: "bpm",   low: 60,  high: 100, step: 1,  min: 0,   max: 300 },
+  { key: "rr",          label: "Resp. Rate",    unit: "/min",  low: 12,  high: 20,  step: 1,  min: 0,   max: 60  },
+  { key: "bpSystolic",  label: "Systolic BP",   unit: "mmHg",  low: 90,  high: 140, step: 1,  min: 0,   max: 300 },
+  { key: "bpDiastolic", label: "Diastolic BP",  unit: "mmHg",  low: 60,  high: 90,  step: 1,  min: 0,   max: 200 },
+  { key: "spo2",        label: "SpO₂",          unit: "%",     low: 95,  high: 100, step: 1,  min: 0,   max: 100 },
+  { key: "gcs",         label: "GCS Total",     unit: "pts",   low: 13,  high: 15,  step: 1,  min: 3,   max: 15  },
 ];
 
-const EMPTY_VITALS: VitalsInput = { hr: 0, rr: 0, bpSystolic: 0, spo2: 0, gcs: 15 };
+const EMPTY_VITALS: VitalsInput = { hr: 0, rr: 0, bpSystolic: 0, bpDiastolic: 0, spo2: 0, gcs: 15 };
 
 function vitalColor(value: number, meta: VitalMeta): string {
   if (value === 0) return C.muted;
@@ -63,7 +64,7 @@ export function CaptureForm({ onSubmit }: Props) {
 
     const patient = buildProvisionalPatient(mrn, {
       sex,
-      approximateAge: Number.isFinite(approxAge) ? approxAge : undefined,
+      ...(Number.isFinite(approxAge) && approxAge !== undefined ? { approximateAge: approxAge } : {}),
     });
     const encounter = buildPrehospitalEncounter({ patientServerUUID: mrn });
     const observations = buildVitalObservations(vitals, {

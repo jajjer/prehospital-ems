@@ -2,7 +2,11 @@ import { useState, useEffect } from "react";
 import { db } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 
-export function StatusBar() {
+interface Props {
+  onLogout: () => void;
+}
+
+export function StatusBar({ onLogout }: Props) {
   const [queueCount, setQueueCount] = useState(0);
   const [deadCount, setDeadCount] = useState(0);
   const [online, setOnline] = useState(navigator.onLine);
@@ -63,6 +67,17 @@ export function StatusBar() {
             {online ? "Live" : "Offline"}
           </span>
         </div>
+        <button
+          onClick={onLogout}
+          style={{
+            background: "none", border: `1px solid ${C.border}`,
+            borderRadius: 4, padding: "0.2rem 0.5rem",
+            color: C.muted, fontFamily: FONT, fontSize: "0.6875rem",
+            cursor: "pointer", letterSpacing: "0.04em",
+          }}
+        >
+          Sign out
+        </button>
       </div>
     </header>
   );

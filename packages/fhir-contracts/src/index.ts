@@ -1,5 +1,5 @@
 export { buildProvisionalPatient, buildProvisionalMrn, DEFAULT_LOCATION_UUID } from "./builders/patient.js";
-export type { ProvisionalPatientOptions } from "./builders/patient.js";
+export type { ProvisionalPatientOptions, PatientSex } from "./builders/patient.js";
 
 export { buildPrehospitalEncounter } from "./builders/encounter.js";
 export type { PrehospitalEncounterOptions } from "./builders/encounter.js";

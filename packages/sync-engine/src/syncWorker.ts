@@ -10,9 +10,12 @@ export interface SyncWorkerConfig {
 
 let config: SyncWorkerConfig | null = null;
 let flushing = false;
+let listenersRegistered = false;
 
 export function initSyncWorker(cfg: SyncWorkerConfig): void {
   config = cfg;
+  if (listenersRegistered) return;
+  listenersRegistered = true;
 
   // Foreground flush on navigator.onLine event
   window.addEventListener("online", () => void flush());

@@ -26,6 +26,12 @@ const VITAL_CONCEPTS = {
     loinc: "8480-6",
     display: "Systolic blood pressure",
   },
+  BP_DIASTOLIC: {
+    uuid: "5086AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ciel: "5086",
+    loinc: "8462-4",
+    display: "Diastolic blood pressure",
+  },
   SPO2: {
     uuid: "5092AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     ciel: "5092",
@@ -48,6 +54,8 @@ export interface VitalsInput {
   rr: number;
   /** Systolic blood pressure in mmHg (0–300) */
   bpSystolic: number;
+  /** Diastolic blood pressure in mmHg (0–200) */
+  bpDiastolic: number;
   /** SpO2 percentage (0–100) */
   spo2: number;
   /** GCS total (3–15) */
@@ -94,10 +102,11 @@ export function buildVitalObservations(
   }
 
   return [
-    obs(VITAL_CONCEPTS.HR,          vitals.hr,          "/min"),
-    obs(VITAL_CONCEPTS.RR,          vitals.rr,          "/min"),
-    obs(VITAL_CONCEPTS.BP_SYSTOLIC, vitals.bpSystolic,  "mm[Hg]"),
-    obs(VITAL_CONCEPTS.SPO2,        vitals.spo2,        "%"),
-    obs(VITAL_CONCEPTS.GCS_TOTAL,   vitals.gcs,         "{score}"),
+    obs(VITAL_CONCEPTS.HR,           vitals.hr,           "/min"),
+    obs(VITAL_CONCEPTS.RR,           vitals.rr,           "/min"),
+    obs(VITAL_CONCEPTS.BP_SYSTOLIC,  vitals.bpSystolic,   "mm[Hg]"),
+    obs(VITAL_CONCEPTS.BP_DIASTOLIC, vitals.bpDiastolic,  "mm[Hg]"),
+    obs(VITAL_CONCEPTS.SPO2,         vitals.spo2,         "%"),
+    obs(VITAL_CONCEPTS.GCS_TOTAL,    vitals.gcs,          "{score}"),
   ];
 }

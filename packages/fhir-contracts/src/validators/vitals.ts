@@ -18,6 +18,9 @@ export function validateVitals(input: VitalsInput): ValidationError[] {
   if (input.bpSystolic < 0 || input.bpSystolic > 300) {
     errors.push({ field: "bpSystolic", message: "Systolic BP must be 0–300 mmHg" });
   }
+  if (input.bpDiastolic < 0 || input.bpDiastolic > 200) {
+    errors.push({ field: "bpDiastolic", message: "Diastolic BP must be 0–200 mmHg" });
+  }
   if (input.spo2 < 0 || input.spo2 > 100) {
     errors.push({ field: "spo2", message: "SpO2 must be 0–100 %" });
   }
