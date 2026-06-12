@@ -8,7 +8,7 @@ import {
   type VitalsInput,
   type PatientSex,
 } from "@prehospital-ems/fhir-contracts";
-import { enqueue, flush } from "@prehospital-ems/sync-engine";
+import { enqueue, flush, logCapture } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 
 interface Props {
@@ -77,6 +77,15 @@ export function CaptureForm({ onSubmit }: Props) {
     for (const obs of observations) {
       await enqueue({ id: crypto.randomUUID(), resourceType: "Observation", resourceId: crypto.randomUUID(), body: JSON.stringify(obs), patientId: mrn, encounterId: provisionalEncounterId });
     }
+
+    await logCapture({
+      mrn,
+      capturedAt: Date.now(),
+      sex,
+      approximateAge: Number.isFinite(approxAge) && approxAge !== undefined ? approxAge : undefined,
+      complaint,
+      vitalsJson: JSON.stringify(vitals),
+    });
 
     void flush();
     setSubmitting(false);

@@ -29,31 +29,40 @@ export interface IdentityMapEntry {
   resolvedAt: number;
 }
 
+export interface CaptureLogEntry {
+  /** Provisional MRN — primary key, links to writeQueue.patientId and identityMap */
+  mrn: string;
+  capturedAt: number;
+  sex: "male" | "female" | "unknown";
+  approximateAge: number | undefined;
+  complaint: string;
+  /** JSON.stringify(VitalsInput) — avoids a cross-package type dep in the DB layer */
+  vitalsJson: string;
+}
+
 export class SyncDatabase extends Dexie {
   writeQueue!: Table<WriteQueueItem, string>;
   deadLetter!: Table<DeadLetterItem, string>;
   identityMap!: Table<IdentityMapEntry, string>;
+  captureLog!: Table<CaptureLogEntry, string>;
 
   constructor() {
     super("prehospital-ems-sync");
 
-    // v1 baseline — do not change indexes without bumping version and adding upgrade()
+    // v1 baseline
     this.version(1).stores({
       writeQueue: "id, resourceType, resourceId, enqueuedAt, retryCount, [patientId], [encounterId]",
       deadLetter: "id, resourceType, resourceId, failedAt",
       identityMap: "provisionalId, serverUUID, resourceType",
-      // identityMap maps client provisional MRNs (e.g. "PROV-abc12345") to
-      // server-assigned UUIDs after a successful POST. Required because fhir2
-      // does not support updateCreate — see design doc for details.
     });
 
-    // v2 (milestone 2): add patientId+encounterId to deadLetter + concepts table
-    // this.version(2).stores({
-    //   writeQueue: "id, resourceType, resourceId, enqueuedAt, retryCount, [patientId], [encounterId]",
-    //   deadLetter: "id, resourceType, resourceId, patientId, encounterId, failedAt",
-    //   identityMap: "provisionalId, serverUUID, resourceType",
-    //   concepts: "id, system, code",
-    // }).upgrade(() => { /* deadLetter fields are nullable — no data migration needed */ });
+    // v2: add captureLog for local record-keeping / history screen
+    this.version(2).stores({
+      writeQueue: "id, resourceType, resourceId, enqueuedAt, retryCount, [patientId], [encounterId]",
+      deadLetter: "id, resourceType, resourceId, failedAt",
+      identityMap: "provisionalId, serverUUID, resourceType",
+      captureLog: "mrn, capturedAt",
+    });
   }
 }
 
