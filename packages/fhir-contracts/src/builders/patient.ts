@@ -12,9 +12,13 @@ const OLD_IDENTIFICATION_NUMBER_UUID = "8d79403a-c2cc-11de-8d13-0010c6dffd0f";
 // Default location UUID (Outpatient Clinic in the reference app)
 export const DEFAULT_LOCATION_UUID = "44c3efb0-2583-4c80-a79e-1f756a03c0a1";
 
+export type PatientSex = "male" | "female" | "unknown";
+
 export interface ProvisionalPatientOptions {
-  /** UUID for the location to record on the identifier. Defaults to DEFAULT_LOCATION_UUID. */
   locationUUID?: string;
+  sex?: PatientSex;
+  /** Approximate age in years — stored as an estimated birth year on the resource. */
+  approximateAge?: number;
 }
 
 /** Returns a PROV-{uuid8} provisional MRN string. */
@@ -53,10 +57,17 @@ export function buildProvisionalPatient(
     family: "Patient",
   };
 
-  return {
+  const patient: Patient = {
     resourceType: "Patient",
     identifier: [identifier],
     name: [name],
-    gender: "unknown",
+    gender: options.sex ?? "unknown",
   };
+
+  if (options.approximateAge !== undefined) {
+    const approxYear = new Date().getFullYear() - options.approximateAge;
+    patient.birthDate = `${approxYear}`;
+  }
+
+  return patient;
 }
