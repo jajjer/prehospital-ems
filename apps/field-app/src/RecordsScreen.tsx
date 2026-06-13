@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { db, getCaptureStatus, type CaptureLogEntry, type CaptureStatus } from "@prehospital-ems/sync-engine";
+import { db, getCaptureStatus, retryDeadLettered, flush, type CaptureLogEntry, type CaptureStatus } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 import type { VitalsInput } from "@prehospital-ems/fhir-contracts";
 
@@ -49,14 +49,25 @@ export function RecordsScreen() {
         {records.length} record{records.length !== 1 ? "s" : ""}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-        {records.map((r) => <RecordCard key={r.mrn} record={r} />)}
+        {records.map((r) => (
+          <RecordCard
+            key={r.mrn}
+            record={r}
+            onRetry={async () => {
+              await retryDeadLettered(r.mrn);
+              void flush();
+              await load();
+            }}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-function RecordCard({ record }: { record: EnrichedEntry }) {
+function RecordCard({ record, onRetry }: { record: EnrichedEntry; onRetry: () => void }) {
   const [open, setOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const time = new Date(record.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const date = new Date(record.capturedAt).toLocaleDateString([], { month: "short", day: "numeric" });
 
@@ -100,6 +111,32 @@ function RecordCard({ record }: { record: EnrichedEntry }) {
         <VitalChip label="GCS" value={record.vitals.gcs} unit="" low={13} high={15} />
       </div>
 
+      {/* Retry button — only shown for failed captures */}
+      {record.status === "failed" && (
+        <div style={{ marginTop: "0.625rem" }} onClick={(e) => e.stopPropagation()}>
+          <button
+            disabled={retrying}
+            onClick={async () => {
+              setRetrying(true);
+              await onRetry();
+              setRetrying(false);
+            }}
+            style={{
+              width: "100%", padding: "0.4rem",
+              background: "transparent",
+              border: `1px solid ${C.danger}`,
+              borderRadius: 6, color: C.danger,
+              fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600,
+              cursor: retrying ? "default" : "pointer",
+              opacity: retrying ? 0.5 : 1,
+              transition: "opacity 0.1s",
+            }}
+          >
+            {retrying ? "Retrying…" : "Retry sync"}
+          </button>
+        </div>
+      )}
+
       {/* Expanded detail */}
       {open && (
         <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: `1px solid ${C.border}`, fontSize: "0.75rem", color: C.muted }}>
@@ -125,7 +162,7 @@ function StatusDot({ status }: { status: CaptureStatus }) {
 
 function StatusLabel({ status }: { status: CaptureStatus }) {
   if (status === "synced") return <span style={{ color: C.success }}>Synced</span>;
-  if (status === "failed") return <span style={{ color: C.danger }}>Failed — will retry</span>;
+  if (status === "failed") return <span style={{ color: C.danger }}>Sync failed</span>;
   return <span style={{ color: C.warning }}>Queued</span>;
 }
 

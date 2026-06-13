@@ -40,6 +40,16 @@ export function initSyncWorker(cfg: SyncWorkerConfig): void {
         // SyncManager.register rejected — not a problem; visibilitychange covers it
       });
   }
+
+  // Receive FLUSH messages posted by the service worker's Background Sync handler.
+  // The SW cannot access Dexie directly, so it delegates back to the window via postMessage.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (event: MessageEvent<unknown>) => {
+      if ((event.data as { type?: string } | null)?.type === "FLUSH") {
+        void flush();
+      }
+    });
+  }
 }
 
 /** Flush the write queue in order: Patient → Encounter → Observation. */

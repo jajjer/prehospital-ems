@@ -11,6 +11,7 @@ import {
 } from "@prehospital-ems/fhir-contracts";
 import { enqueue, flush, logCapture } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
+import { LOCATION_UUID, GCS_CONCEPT_UUID } from "./config.js";
 
 interface Props {
   onSubmit: () => void;
@@ -66,12 +67,14 @@ export function CaptureForm({ onSubmit }: Props) {
 
     const patient = buildProvisionalPatient(mrn, {
       sex,
+      locationUUID: LOCATION_UUID,
       ...(Number.isFinite(approxAge) && approxAge !== undefined ? { approximateAge: approxAge } : {}),
     });
-    const encounter = buildPrehospitalEncounter({ patientServerUUID: mrn });
+    const encounter = buildPrehospitalEncounter({ patientServerUUID: mrn, locationUUID: LOCATION_UUID });
     const observations = buildVitalObservations(vitals, {
       patientServerUUID: mrn,
       encounterServerUUID: provisionalEncounterId,
+      gcsConceptUUID: GCS_CONCEPT_UUID,
     });
 
     await enqueue({ id: crypto.randomUUID(), resourceType: "Patient",   resourceId: mrn,                    body: JSON.stringify(patient) });

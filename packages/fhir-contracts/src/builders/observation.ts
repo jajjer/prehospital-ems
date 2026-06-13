@@ -41,7 +41,7 @@ const VITAL_CONCEPTS = {
   SPO2: {
     uuid: "5092AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     ciel: "5092",
-    loinc: "2708-6",
+    loinc: "59408-5",
     display: "Arterial blood oxygen saturation (pulse oximeter)",
   },
   GCS_TOTAL: {
@@ -74,6 +74,9 @@ export interface ObservationContext {
   patientServerUUID: string;
   encounterServerUUID: string;
   effectiveTime?: string;
+  /** Override the GCS concept UUID for deployments that have a different local concept.
+   *  Defaults to the UUID created manually in the reference instance. */
+  gcsConceptUUID?: string;
 }
 
 export function buildVitalObservations(
@@ -81,6 +84,9 @@ export function buildVitalObservations(
   ctx: ObservationContext
 ): Observation[] {
   const effectiveDateTime = ctx.effectiveTime ?? new Date().toISOString();
+  const gcsConcept = ctx.gcsConceptUUID
+    ? { ...VITAL_CONCEPTS.GCS_TOTAL, uuid: ctx.gcsConceptUUID }
+    : VITAL_CONCEPTS.GCS_TOTAL;
   const subject = { reference: `Patient/${ctx.patientServerUUID}`, type: "Patient" as const };
   const encounter = { reference: `Encounter/${ctx.encounterServerUUID}`, type: "Encounter" as const };
 
@@ -115,7 +121,7 @@ export function buildVitalObservations(
     obs(VITAL_CONCEPTS.BP_SYSTOLIC,  vitals.bpSystolic,   "mm[Hg]"),
     obs(VITAL_CONCEPTS.BP_DIASTOLIC, vitals.bpDiastolic,  "mm[Hg]"),
     obs(VITAL_CONCEPTS.SPO2,         vitals.spo2,         "%"),
-    obs(VITAL_CONCEPTS.GCS_TOTAL,    vitals.gcs,          "{score}"),
+    obs(gcsConcept,                  vitals.gcs,          "{score}"),
   ];
   // Temperature is optional — skip the observation if not measured (value = 0).
   // Posting 0°C would display as a valid reading in the OpenMRS chart.

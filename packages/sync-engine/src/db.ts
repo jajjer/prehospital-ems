@@ -29,6 +29,18 @@ export interface IdentityMapEntry {
   resolvedAt: number;
 }
 
+export interface ConceptCacheEntry {
+  /** OpenMRS concept UUID — primary key */
+  uuid: string;
+  /** CIEL numeric concept ID for lookup */
+  cielId: string;
+  /** Display name for the concept */
+  display: string;
+  /** UCUM unit string, if applicable */
+  unit?: string;
+  cachedAt: number;
+}
+
 export interface CaptureLogEntry {
   /** Provisional MRN — primary key, links to writeQueue.patientId and identityMap */
   mrn: string;
@@ -45,6 +57,7 @@ export class SyncDatabase extends Dexie {
   deadLetter!: Table<DeadLetterItem, string>;
   identityMap!: Table<IdentityMapEntry, string>;
   captureLog!: Table<CaptureLogEntry, string>;
+  concepts!: Table<ConceptCacheEntry, string>;
 
   constructor() {
     super("prehospital-ems-sync");
@@ -74,6 +87,17 @@ export class SyncDatabase extends Dexie {
       deadLetter: "id, resourceType, resourceId, patientId, failedAt",
       identityMap: "provisionalId, serverUUID, resourceType",
       captureLog: "mrn, capturedAt",
+    });
+
+    // v4 (M2): add encounterId index on deadLetter + concepts table for CIEL caching.
+    // Bundled into one version so M2 doesn't require a v5 mid-deployment.
+    // concepts schema is a placeholder — non-indexed fields can be added without a bump.
+    this.version(4).stores({
+      writeQueue: "id, resourceType, resourceId, enqueuedAt, retryCount, [patientId], [encounterId]",
+      deadLetter: "id, resourceType, resourceId, patientId, encounterId, failedAt",
+      identityMap: "provisionalId, serverUUID, resourceType",
+      captureLog: "mrn, capturedAt",
+      concepts: "uuid, cielId",
     });
   }
 }

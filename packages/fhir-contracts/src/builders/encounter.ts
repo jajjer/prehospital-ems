@@ -1,4 +1,5 @@
 import type { Encounter } from "fhir/r4";
+import { DEFAULT_LOCATION_UUID } from "./patient.js";
 
 // fhir2 maps OpenMRS Visit → FHIR Encounter.
 // The `type` field must use the fhir.openmrs.org visit-type code system,
@@ -22,7 +23,7 @@ export function buildPrehospitalEncounter(
 ): Encounter {
   const startTime = options.startTime ?? new Date().toISOString();
   const locationUUID =
-    options.locationUUID ?? "44c3efb0-2583-4c80-a79e-1f756a03c0a1";
+    options.locationUUID ?? DEFAULT_LOCATION_UUID;
 
   return {
     resourceType: "Encounter",
