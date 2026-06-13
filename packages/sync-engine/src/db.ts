@@ -63,6 +63,14 @@ export class SyncDatabase extends Dexie {
       identityMap: "provisionalId, serverUUID, resourceType",
       captureLog: "mrn, capturedAt",
     });
+
+    // v3: index patientId on deadLetter so getCaptureStatus can query it
+    this.version(3).stores({
+      writeQueue: "id, resourceType, resourceId, enqueuedAt, retryCount, [patientId], [encounterId]",
+      deadLetter: "id, resourceType, resourceId, patientId, failedAt",
+      identityMap: "provisionalId, serverUUID, resourceType",
+      captureLog: "mrn, capturedAt",
+    });
   }
 }
 

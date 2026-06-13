@@ -40,5 +40,11 @@ export default defineConfig({
   ],
   server: {
     port: 3000,
+    proxy: {
+      "/openmrs": {
+        target: "http://localhost:8069",
+        changeOrigin: true,
+      },
+    },
   },
 });

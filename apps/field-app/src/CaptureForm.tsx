@@ -83,7 +83,6 @@ export function CaptureForm({ onSubmit }: Props) {
     if (complaint.trim()) {
       const condition = buildChiefComplaintCondition(complaint.trim(), {
         patientServerUUID: mrn,
-        encounterServerUUID: provisionalEncounterId,
       });
       await enqueue({ id: crypto.randomUUID(), resourceType: "Condition", resourceId: crypto.randomUUID(), body: JSON.stringify(condition), patientId: mrn, encounterId: provisionalEncounterId });
     }
