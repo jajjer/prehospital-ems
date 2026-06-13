@@ -49,6 +49,10 @@ export class SyncDatabase extends Dexie {
   constructor() {
     super("prehospital-ems-sync");
 
+    // Close this connection when another tab/SW wants to upgrade the schema,
+    // so the upgrade isn't blocked indefinitely.
+    this.on("versionchange", () => { this.close(); });
+
     // v1 baseline
     this.version(1).stores({
       writeQueue: "id, resourceType, resourceId, enqueuedAt, retryCount, [patientId], [encounterId]",
