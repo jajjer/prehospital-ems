@@ -12,6 +12,13 @@ import { LoginScreen } from "./LoginScreen.js";
 import { RecordsScreen } from "./RecordsScreen.js";
 import { C, FONT } from "./theme.js";
 import { FHIR_BASE, REST_BASE } from "./config.js";
+import {
+  OAUTH2_CLIENT_ID,
+  exchangeCodeForToken,
+  refreshAccessToken,
+  startOAuth2Login,
+  clearOAuth2Tokens,
+} from "./oauth2.js";
 
 type Tab = "capture" | "records";
 
@@ -26,6 +33,10 @@ export function App() {
   const [bgSyncSuppressed, setBgSyncSuppressed] = useState(false);
   const [clockSkewMinutes, setClockSkewMinutes] = useState<number | null>(null);
   const [storageWarning, setStorageWarning] = useState(false);
+  const [completingOAuth2, setCompletingOAuth2] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    return !!(p.get("code") && p.get("state"));
+  });
 
   useEffect(() => {
     if (authHeader) {
@@ -33,6 +44,19 @@ export function App() {
       void pruneOldCaptures();
     }
   }, [authHeader]);
+
+  // Complete OAuth2 authorization-code exchange when redirected back from OpenMRS.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code  = params.get("code");
+    const state = params.get("state");
+    if (!code || !state) return;
+    window.history.replaceState({}, "", window.location.pathname);
+    exchangeCodeForToken(code, state)
+      .then((auth) => { if (auth) setAuthHeader(auth); })
+      .catch(() => undefined)
+      .finally(() => setCompletingOAuth2(false));
+  }, []);
 
   // Detect a waiting service worker and surface a non-blocking update banner.
   useEffect(() => {
@@ -56,8 +80,17 @@ export function App() {
   }, []);
 
   // Re-auth when the sync worker encounters a 401.
+  // Try silent token refresh first (OAuth2 only); fall back to re-auth modal.
   useEffect(() => {
-    const handler = () => setSessionExpired(true);
+    const handler = () => {
+      void refreshAccessToken().then((newAuth) => {
+        if (newAuth) {
+          setAuthHeader(newAuth);
+        } else {
+          setSessionExpired(true);
+        }
+      });
+    };
     window.addEventListener("ems:auth-expired", handler);
     return () => window.removeEventListener("ems:auth-expired", handler);
   }, []);
@@ -98,12 +131,21 @@ export function App() {
     }).catch(() => undefined);
   }
 
+  if (completingOAuth2) {
+    return (
+      <div style={{ minHeight: "100dvh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT }}>
+        <span style={{ color: C.muted, fontSize: "0.9375rem" }}>Completing sign-in…</span>
+      </div>
+    );
+  }
+
   if (!authHeader) {
     return <LoginScreen onLogin={(auth) => setAuthHeader(auth)} />;
   }
 
   function handleLogout() {
     sessionStorage.removeItem("ems_auth");
+    clearOAuth2Tokens();
     setAuthHeader(null);
   }
 
@@ -151,7 +193,7 @@ export function App() {
       )}
 
       {sessionExpired && (
-        <ReAuthModal onReAuth={handleReAuth} />
+        <ReAuthModal onReAuth={handleReAuth} useOAuth2={!!OAUTH2_CLIENT_ID} />
       )}
 
       <StatusBar onLogout={handleLogout} />
@@ -195,7 +237,7 @@ export function App() {
   );
 }
 
-function ReAuthModal({ onReAuth }: { onReAuth: (auth: string) => void }) {
+function ReAuthModal({ onReAuth, useOAuth2 }: { onReAuth: (auth: string) => void; useOAuth2: boolean }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -239,6 +281,29 @@ function ReAuthModal({ onReAuth }: { onReAuth: (auth: string) => void }) {
         <p style={{ color: C.muted, fontSize: "0.8125rem", marginBottom: "1.25rem" }}>
           Sign in again to continue syncing. Your queued records are safe.
         </p>
+
+        {useOAuth2 && (
+          <>
+            <button
+              type="button"
+              onClick={() => void startOAuth2Login()}
+              style={{
+                width: "100%", padding: "0.75rem",
+                background: C.primary, color: "#fff", border: "none", borderRadius: 8,
+                fontSize: "0.9375rem", fontWeight: 700, cursor: "pointer",
+                fontFamily: FONT, marginBottom: "1rem",
+              }}
+            >
+              Sign in with OpenMRS
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+              <span style={{ color: C.muted, fontSize: "0.75rem" }}>or</span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+          </>
+        )}
+
         <form onSubmit={(e) => void handleSubmit(e)}>
           <input
             type="text" placeholder="Username" autoCapitalize="off"

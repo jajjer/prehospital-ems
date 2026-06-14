@@ -19,6 +19,4 @@
 **What:** Implement the `apps/dispatch` stub. A browser-based dispatch console showing active calls on a map, linked to the field captures via the sync engine.
 **Note:** Currently a stub. No scope defined beyond the M1 placeholder.
 
-### M2-4: OAuth2 / OIDC authentication
-**What:** Replace Basic auth with OpenMRS's OAuth2/OIDC support for deployments that have it configured. Basic auth over HTTPS is acceptable for M1 LMIC deployments where the OpenMRS instance is simple, but larger deployments will require proper token-based auth.
-**Why:** Basic auth stores the raw password (base64, not encrypted) in sessionStorage. Token-based auth scopes permissions and supports session revocation.
+### ~~M2-4: OAuth2 / OIDC authentication~~ DONE

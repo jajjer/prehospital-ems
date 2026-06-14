@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { C, FONT } from "./theme.js";
 import { REST_BASE } from "./config.js";
+import { OAUTH2_CLIENT_ID, startOAuth2Login } from "./oauth2.js";
 
 interface Props {
   onLogin: (authHeader: string) => void;
@@ -65,9 +66,31 @@ export function LoginScreen({ onLogin }: Props) {
             </span>
           </div>
           <p style={{ color: C.muted, fontSize: "0.8125rem" }}>
-            Sign in with your OpenMRS credentials
+            {OAUTH2_CLIENT_ID ? "Sign in to continue" : "Sign in with your OpenMRS credentials"}
           </p>
         </div>
+
+        {OAUTH2_CLIENT_ID && (
+          <div style={{ marginBottom: "1rem" }}>
+            <button
+              type="button"
+              onClick={() => void startOAuth2Login()}
+              style={{
+                width: "100%", padding: "0.875rem",
+                background: C.primary, color: "#fff", border: "none", borderRadius: 8,
+                fontSize: "1rem", fontWeight: 700, cursor: "pointer",
+                fontFamily: FONT, letterSpacing: "0.02em",
+              }}
+            >
+              Sign in with OpenMRS
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", margin: "1rem 0" }}>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+              <span style={{ color: C.muted, fontSize: "0.75rem" }}>or use username and password</span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+          </div>
+        )}
 
         <form onSubmit={(e) => void handleSubmit(e)} style={{
           background: C.surface, border: `1px solid ${C.border}`,
