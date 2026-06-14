@@ -110,7 +110,7 @@ function RecordCard({ record, onRetry }: { record: EnrichedEntry; onRetry: () =>
       {/* Vitals summary row */}
       <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
         <VitalChip label="HR" value={record.vitals.hr} unit="bpm" low={60} high={100} />
-        <VitalChip label="BP" value={`${record.vitals.bpSystolic}/${record.vitals.bpDiastolic}`} unit="mmHg" />
+        <VitalChip label="BP" value={record.vitals.bpSystolic === 0 && record.vitals.bpDiastolic === 0 ? 0 : `${record.vitals.bpSystolic}/${record.vitals.bpDiastolic}`} unit="mmHg" />
         <VitalChip label="RR" value={record.vitals.rr} unit="/min" low={12} high={20} />
         {record.vitals.temp > 0 && <VitalChip label="T" value={record.vitals.temp} unit="°C" low={36.1} high={37.5} />}
         <VitalChip label="SpO₂" value={record.vitals.spo2} unit="%" low={95} high={100} />
