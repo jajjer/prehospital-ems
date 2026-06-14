@@ -22,6 +22,22 @@ export async function getPendingCapture(): Promise<CaptureLogEntry | undefined> 
 
 export type CaptureStatus = "synced" | "queued" | "failed";
 
+const PRUNE_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
+
+/**
+ * Deletes captureLog entries older than 30 days along with any associated
+ * writeQueue and deadLetter rows. Safe to call on every app launch.
+ */
+export async function pruneOldCaptures(): Promise<void> {
+  const cutoff = Date.now() - PRUNE_AGE_MS;
+  const old = await db.captureLog.where("capturedAt").below(cutoff).toArray();
+  for (const entry of old) {
+    await db.writeQueue.filter((i) => i.patientId === entry.mrn || i.resourceId === entry.mrn).delete();
+    await db.deadLetter.where("patientId").equals(entry.mrn).delete();
+    await db.captureLog.delete(entry.mrn);
+  }
+}
+
 /**
  * Moves all dead-lettered items for a capture back into the write queue at retryCount=0.
  * Call flush() after this to attempt immediate re-upload.

@@ -5,7 +5,7 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { useState, useEffect } from "react";
-import { initSyncWorker, flush } from "@prehospital-ems/sync-engine";
+import { initSyncWorker, flush, pruneOldCaptures } from "@prehospital-ems/sync-engine";
 import { CaptureForm } from "./CaptureForm.js";
 import { StatusBar } from "./StatusBar.js";
 import { LoginScreen } from "./LoginScreen.js";
@@ -30,6 +30,7 @@ export function App() {
   useEffect(() => {
     if (authHeader) {
       initSyncWorker({ fhirBaseUrl: FHIR_BASE, authHeader });
+      void pruneOldCaptures();
     }
   }, [authHeader]);
 

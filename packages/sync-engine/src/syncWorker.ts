@@ -254,6 +254,48 @@ async function resolveReferences(body: string): Promise<string> {
   return resolved;
 }
 
+export type FinalizeResult = "ok" | "not-synced" | "network-error" | "server-error";
+
+/**
+ * PATCHes the FHIR Encounter for this MRN to status "finished" with a period.end timestamp.
+ * Returns "not-synced" if the encounter hasn't been uploaded yet (no identity map entry).
+ * Requires the app to be online — this is a foreground, user-triggered action.
+ */
+export async function finalizeEncounter(mrn: string): Promise<FinalizeResult> {
+  if (!config) return "not-synced";
+  const { fhirBaseUrl, authHeader } = config;
+
+  const captureEntry = await db.captureLog.get(mrn);
+  if (!captureEntry?.encounterId) return "not-synced";
+
+  const mapEntry = await db.identityMap.get(captureEntry.encounterId);
+  if (!mapEntry) return "not-synced";
+
+  const patches = [
+    { op: "replace", path: "/status", value: "finished" },
+    { op: "add", path: "/period/end", value: new Date().toISOString() },
+  ];
+
+  let response: Response;
+  try {
+    response = await fetch(`${fhirBaseUrl}/Encounter/${mapEntry.serverUUID}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json-patch+json",
+        "Authorization": authHeader,
+      },
+      body: JSON.stringify(patches),
+    });
+  } catch {
+    return "network-error";
+  }
+
+  if (!response.ok) return "server-error";
+
+  await db.captureLog.update(mrn, { handoffAt: Date.now() });
+  return "ok";
+}
+
 /** Enqueue a FHIR resource for sync. */
 export async function enqueue(
   item: Omit<WriteQueueItem, "enqueuedAt" | "retryCount">

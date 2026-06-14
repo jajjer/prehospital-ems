@@ -100,6 +100,7 @@ export function CaptureForm({ onSubmit }: Props) {
       complaint,
       vitalsJson: JSON.stringify(vitals),
       submissionStatus: "pending",
+      encounterId: provisionalEncounterId,
     });
 
     await enqueue({ id: crypto.randomUUID(), resourceType: "Patient",   resourceId: mrn,                    body: JSON.stringify(patient) });

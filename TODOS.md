@@ -19,14 +19,9 @@
 
 ## LMIC Hardening — important for real-world field deployment
 
-### LMIC-3: CaptureLog retention policy
-**What:** Automatically prune `captureLog` entries older than 30 days (or a configurable window). Dead-letter and writeQueue entries for resolved MRNs should also be cleaned up after successful sync.
-**Why:** Without pruning, IndexedDB grows unboundedly. On a shared device used for months, this will eventually hit the storage quota.
+### ~~LMIC-3: CaptureLog retention policy~~ DONE
 
-### LMIC-4: Encounter finalization — mark "finished" on handoff
-**What:** Add a "Hand off patient" action in the field app that PATCHes the FHIR Encounter status from `in-progress` to `finished` with a period.end timestamp.
-**Why:** OpenMRS displays encounter status in the patient chart. An encounter that remains `in-progress` indefinitely is clinically misleading. Receiving hospital staff need to see a clear handoff time.
-**Depends on:** Requires the identity map to have resolved the encounter UUID before the action can be taken.
+### ~~LMIC-4: Encounter finalization — mark "finished" on handoff~~ DONE
 
 ### LMIC-5: Multi-responder deduplication
 **What:** If two paramedics in the same vehicle both capture the same patient, there is no deduplication mechanism — two separate patients are created in OpenMRS.

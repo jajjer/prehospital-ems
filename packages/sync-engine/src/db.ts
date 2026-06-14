@@ -59,6 +59,11 @@ export interface CaptureLogEntry {
   /** Written "pending" before FHIR resources are enqueued; updated to "complete" after.
    *  A crash between these two writes leaves "pending" — detected on next mount. */
   submissionStatus?: "pending" | "complete";
+  /** Provisional encounter ID (ENC-xxxxxxxx) — stored at capture time so finalizeEncounter
+   *  can resolve it to a server UUID via the identity map. Absent on pre-LMIC-4 records. */
+  encounterId?: string;
+  /** Unix ms timestamp set when the encounter was PATCHed to "finished" on handoff. */
+  handoffAt?: number;
 }
 
 export class SyncDatabase extends Dexie {

@@ -5,7 +5,7 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { useState, useEffect } from "react";
-import { db, getCaptureStatus, retryDeadLettered, flush, type CaptureLogEntry, type CaptureStatus } from "@prehospital-ems/sync-engine";
+import { db, getCaptureStatus, retryDeadLettered, flush, finalizeEncounter, type CaptureLogEntry, type CaptureStatus } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 import type { VitalsInput } from "@prehospital-ems/fhir-contracts";
 
@@ -64,6 +64,7 @@ export function RecordsScreen() {
               void flush();
               await load();
             }}
+            onHandoffSuccess={() => void load()}
           />
         ))}
       </div>
@@ -71,9 +72,15 @@ export function RecordsScreen() {
   );
 }
 
-function RecordCard({ record, onRetry }: { record: EnrichedEntry; onRetry: () => void }) {
+function RecordCard({ record, onRetry, onHandoffSuccess }: {
+  record: EnrichedEntry;
+  onRetry: () => void;
+  onHandoffSuccess: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [handingOff, setHandingOff] = useState(false);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
   const time = new Date(record.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const date = new Date(record.capturedAt).toLocaleDateString([], { month: "short", day: "numeric" });
 
@@ -140,6 +147,54 @@ function RecordCard({ record, onRetry }: { record: EnrichedEntry; onRetry: () =>
           >
             {retrying ? "Retrying…" : "Retry sync"}
           </button>
+        </div>
+      )}
+
+      {/* Hand off — only for synced records that have an encounterId and haven't been handed off */}
+      {record.status === "synced" && record.encounterId && !record.handoffAt && (
+        <div style={{ marginTop: "0.625rem" }} onClick={(e) => e.stopPropagation()}>
+          {handoffError && (
+            <div style={{ color: C.danger, fontSize: "0.6875rem", marginBottom: "0.375rem" }}>
+              {handoffError}
+            </div>
+          )}
+          <button
+            disabled={handingOff}
+            onClick={async () => {
+              setHandingOff(true);
+              setHandoffError(null);
+              const result = await finalizeEncounter(record.mrn);
+              if (result === "ok") {
+                onHandoffSuccess();
+              } else if (result === "network-error") {
+                setHandoffError("No connection — try again when online.");
+              } else if (result === "server-error") {
+                setHandoffError("Server error — try again.");
+              } else {
+                setHandoffError("Encounter not yet synced.");
+              }
+              setHandingOff(false);
+            }}
+            style={{
+              width: "100%", padding: "0.4rem",
+              background: "transparent",
+              border: `1px solid ${C.primary}`,
+              borderRadius: 6, color: C.primary,
+              fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600,
+              cursor: handingOff ? "default" : "pointer",
+              opacity: handingOff ? 0.5 : 1,
+              transition: "opacity 0.1s",
+            }}
+          >
+            {handingOff ? "Handing off…" : "Hand off patient"}
+          </button>
+        </div>
+      )}
+
+      {/* Handed-off confirmation */}
+      {record.handoffAt && (
+        <div style={{ marginTop: "0.625rem", fontSize: "0.6875rem", color: C.success }} onClick={(e) => e.stopPropagation()}>
+          Handed off at {new Date(record.handoffAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
       )}
 
