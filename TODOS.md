@@ -1,11 +1,5 @@
 # TODOS
 
-## General
-
-### ~~TODO-1 / M2-2: Battery optimization detection + prompt~~ DONE
-
----
-
 ## Production Blockers — must fix before any field deployment
 
 ### BLOCK-5: Validate on a real budget Android device
@@ -25,13 +19,9 @@
 
 ## LMIC Hardening — important for real-world field deployment
 
-### ~~LMIC-1: Clock skew detection and warning~~ DONE
-
-### ~~LMIC-2: IndexedDB storage quota warning~~ DONE
-
 ### LMIC-3: CaptureLog retention policy
 **What:** Automatically prune `captureLog` entries older than 30 days (or a configurable window). Dead-letter and writeQueue entries for resolved MRNs should also be cleaned up after successful sync.
-**Why:** Without pruning, IndexedDB grows unboundedly. On a shared device used for months, this will eventually hit the storage quota (LMIC-2).
+**Why:** Without pruning, IndexedDB grows unboundedly. On a shared device used for months, this will eventually hit the storage quota.
 
 ### LMIC-4: Encounter finalization — mark "finished" on handoff
 **What:** Add a "Hand off patient" action in the field app that PATCHes the FHIR Encounter status from `in-progress` to `finished` with a period.end timestamp.
