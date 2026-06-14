@@ -17,6 +17,8 @@ export interface SyncWorkerConfig {
 let config: SyncWorkerConfig | null = null;
 let flushing = false;
 let listenersRegistered = false;
+let bgSyncFlushed = false;
+let clockChecked = false;
 
 export function initSyncWorker(cfg: SyncWorkerConfig): void {
   config = cfg;
@@ -34,27 +36,40 @@ export function initSyncWorker(cfg: SyncWorkerConfig): void {
     }
   });
 
-  // Register Background Sync for Android Chrome (silently no-ops where unsupported)
-  if ("serviceWorker" in navigator && "SyncManager" in window) {
-    navigator.serviceWorker.ready
-      .then((reg) => {
-        // SyncManager is not in the standard DOM lib — cast to access it
-        const syncReg = reg as unknown as { sync: { register(tag: string): Promise<void> } };
-        return syncReg.sync.register("fhir-flush");
-      })
-      .catch(() => {
-        // SyncManager.register rejected — not a problem; visibilitychange covers it
-      });
-  }
-
   // Receive FLUSH messages posted by the service worker's Background Sync handler.
   // The SW cannot access Dexie directly, so it delegates back to the window via postMessage.
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", (event: MessageEvent<unknown>) => {
       if ((event.data as { type?: string } | null)?.type === "FLUSH") {
+        bgSyncFlushed = true;
         void flush();
       }
     });
+  }
+
+  // Register Background Sync for Android Chrome (silently no-ops where unsupported)
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
+    navigator.serviceWorker.ready
+      .then((reg) => {
+        // SyncManager is not in the standard DOM lib — cast to access it
+        const syncReg = reg as unknown as {
+          sync: { register(tag: string): Promise<void>; getTags(): Promise<string[]> };
+        };
+        return syncReg.sync.register("fhir-flush").then(() => {
+          // Heuristic: if the tag disappears after 1.5 s without a SW FLUSH message,
+          // Background Sync was likely suppressed by OEM battery optimization.
+          setTimeout(() => {
+            void syncReg.sync.getTags().then((tags) => {
+              if (!bgSyncFlushed && !tags.includes("fhir-flush")) {
+                window.dispatchEvent(new CustomEvent("ems:bg-sync-suppressed"));
+              }
+            }).catch(() => undefined);
+          }, 1500);
+        });
+      })
+      .catch(() => {
+        // SyncManager.register rejected — not a problem; visibilitychange covers it
+      });
   }
 }
 
@@ -134,6 +149,17 @@ async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
   if (response.ok) {
     const resource = await response.json() as { id?: string; meta?: { lastUpdated?: string } };
     const serverUUID = resource.id;
+
+    // Clock skew detection — fires once per session on first successful FHIR response
+    if (!clockChecked && resource.meta?.lastUpdated) {
+      clockChecked = true;
+      const skewMs = Math.abs(Date.now() - new Date(resource.meta.lastUpdated).getTime());
+      if (skewMs > 5 * 60 * 1000) {
+        window.dispatchEvent(
+          new CustomEvent("ems:clock-skew", { detail: { skewMinutes: Math.round(skewMs / 60_000) } })
+        );
+      }
+    }
 
     // Store identity map entry for Patients and Encounters
     if (serverUUID && (item.resourceType === "Patient" || item.resourceType === "Encounter")) {

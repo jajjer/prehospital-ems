@@ -23,6 +23,9 @@ export function App() {
   const [submitted, setSubmitted] = useState(false);
   const [swUpdateReady, setSwUpdateReady] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [bgSyncSuppressed, setBgSyncSuppressed] = useState(false);
+  const [clockSkewMinutes, setClockSkewMinutes] = useState<number | null>(null);
+  const [storageWarning, setStorageWarning] = useState(false);
 
   useEffect(() => {
     if (authHeader) {
@@ -57,6 +60,30 @@ export function App() {
     window.addEventListener("ems:auth-expired", handler);
     return () => window.removeEventListener("ems:auth-expired", handler);
   }, []);
+
+  // Battery optimization detection.
+  useEffect(() => {
+    const handler = () => setBgSyncSuppressed(true);
+    window.addEventListener("ems:bg-sync-suppressed", handler);
+    return () => window.removeEventListener("ems:bg-sync-suppressed", handler);
+  }, []);
+
+  // Clock skew detection.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      setClockSkewMinutes((e as CustomEvent<{ skewMinutes: number }>).detail.skewMinutes);
+    };
+    window.addEventListener("ems:clock-skew", handler);
+    return () => window.removeEventListener("ems:clock-skew", handler);
+  }, []);
+
+  // Storage quota warning — check once on login.
+  useEffect(() => {
+    if (!authHeader || !("storage" in navigator)) return;
+    navigator.storage.estimate().then(({ usage = 0, quota = 0 }) => {
+      if (quota > 0 && usage / quota > 0.8) setStorageWarning(true);
+    }).catch(() => undefined);
+  }, [authHeader]);
 
   function handleReAuth(newAuth: string) {
     setAuthHeader(newAuth);
@@ -102,6 +129,24 @@ export function App() {
             Refresh
           </button>
         </div>
+      )}
+
+      {bgSyncSuppressed && (
+        <WarnBanner onDismiss={() => setBgSyncSuppressed(false)}>
+          Background sync may be disabled by battery optimization. Go to Settings → Apps → Chrome → Battery → Unrestricted.
+        </WarnBanner>
+      )}
+
+      {clockSkewMinutes !== null && (
+        <WarnBanner onDismiss={() => setClockSkewMinutes(null)}>
+          Device clock may be off by ~{clockSkewMinutes} min. Vital timestamps could be incorrect — check Settings → Date &amp; Time.
+        </WarnBanner>
+      )}
+
+      {storageWarning && (
+        <WarnBanner onDismiss={() => setStorageWarning(false)}>
+          Device storage is nearly full. Free up space to ensure records can be saved offline.
+        </WarnBanner>
       )}
 
       {sessionExpired && (
@@ -232,6 +277,26 @@ const reAuthInputStyle: React.CSSProperties = {
   borderRadius: 6, padding: "0.625rem 0.75rem",
   color: C.text, fontFamily: FONT, fontSize: "0.9375rem", outline: "none",
 };
+
+function WarnBanner({ children, onDismiss }: { children: React.ReactNode; onDismiss: () => void }) {
+  return (
+    <div style={{
+      background: "#1c1a0a", borderBottom: `1px solid #ca8a04`,
+      padding: "0.5rem 1rem", display: "flex", justifyContent: "space-between",
+      alignItems: "center", gap: "0.75rem",
+    }}>
+      <span style={{ color: "#fbbf24", fontSize: "0.8125rem" }}>{children}</span>
+      <button
+        onClick={onDismiss}
+        style={{
+          background: "none", border: "none", color: "#ca8a04",
+          cursor: "pointer", fontSize: "1rem", padding: 0, flexShrink: 0,
+          fontFamily: FONT,
+        }}
+      >✕</button>
+    </div>
+  );
+}
 
 function SuccessScreen({ onNew }: { onNew: () => void }) {
   return (

@@ -2,10 +2,7 @@
 
 ## General
 
-### TODO-1 / M2-2: Battery optimization detection + prompt (M2)
-**What:** On first launch, detect if Chrome is battery-optimized on Android (heuristic: check if SyncManager.getTags() is consistently empty after a flush attempt) and prompt the responder to whitelist Chrome in battery settings.
-**Why:** Budget Android OEMs (Tecno, Infinix, itel) aggressively kill Background Sync. Without detection, a misconfigured device silently fails to sync in the background.
-**Cons:** Battery API is deprecated; heuristic detection adds complexity. Best deferred until field pilots surface actual deployment patterns.
+### ~~TODO-1 / M2-2: Battery optimization detection + prompt~~ DONE
 
 ---
 
@@ -28,13 +25,9 @@
 
 ## LMIC Hardening — important for real-world field deployment
 
-### LMIC-1: Clock skew detection and warning
-**What:** Detect if the device clock is more than ~5 minutes off from the server (`meta.lastUpdated` on the first successful FHIR response vs. `Date.now()`). Warn the responder to fix the device time.
-**Why:** LMIC Android devices frequently have wrong system clocks, especially after battery-out events. `effectiveDateTime` on vitals observations would be wrong, making the chart clinically misleading.
+### ~~LMIC-1: Clock skew detection and warning~~ DONE
 
-### LMIC-2: IndexedDB storage quota warning
-**What:** Use `navigator.storage.estimate()` on app load to check available storage. Warn if usage exceeds 80% of quota.
-**Why:** Budget Android phones often have very limited storage (8–16 GB shared with the OS). If the device is offline for multiple days, the writeQueue could grow large enough to exhaust IndexedDB quota, causing silent write failures.
+### ~~LMIC-2: IndexedDB storage quota warning~~ DONE
 
 ### LMIC-3: CaptureLog retention policy
 **What:** Automatically prune `captureLog` entries older than 30 days (or a configurable window). Dead-letter and writeQueue entries for resolved MRNs should also be cleaned up after successful sync.
