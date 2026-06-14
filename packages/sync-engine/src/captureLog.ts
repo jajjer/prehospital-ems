@@ -4,6 +4,16 @@ export async function logCapture(entry: CaptureLogEntry): Promise<void> {
   await db.captureLog.put(entry);
 }
 
+export async function markCaptureComplete(mrn: string): Promise<void> {
+  await db.captureLog.update(mrn, { submissionStatus: "complete" });
+}
+
+/** Returns the first captureLog entry with submissionStatus "pending", if any. */
+export async function getPendingCapture(): Promise<CaptureLogEntry | undefined> {
+  const all = await db.captureLog.toArray();
+  return all.find((e) => e.submissionStatus === "pending");
+}
+
 export type CaptureStatus = "synced" | "queued" | "failed";
 
 /**

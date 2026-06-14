@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   buildProvisionalMrn,
   buildProvisionalPatient,
@@ -9,7 +9,7 @@ import {
   type VitalsInput,
   type PatientSex,
 } from "@prehospital-ems/fhir-contracts";
-import { enqueue, flush, logCapture } from "@prehospital-ems/sync-engine";
+import { enqueue, flush, logCapture, markCaptureComplete, getPendingCapture } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 import { LOCATION_UUID, GCS_CONCEPT_UUID } from "./config.js";
 
@@ -53,6 +53,13 @@ export function CaptureForm({ onSubmit }: Props) {
   const [complaint, setComplaint] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingBanner, setPendingBanner] = useState(false);
+
+  useEffect(() => {
+    getPendingCapture().then((entry) => {
+      if (entry) setPendingBanner(true);
+    }).catch(() => undefined);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,6 +84,18 @@ export function CaptureForm({ onSubmit }: Props) {
       gcsConceptUUID: GCS_CONCEPT_UUID,
     });
 
+    // Write captureLog as "pending" before enqueuing so a force-close mid-enqueue
+    // is detectable on next mount rather than silently lost.
+    await logCapture({
+      mrn,
+      capturedAt: Date.now(),
+      sex,
+      approximateAge: Number.isFinite(approxAge) && approxAge !== undefined ? approxAge : undefined,
+      complaint,
+      vitalsJson: JSON.stringify(vitals),
+      submissionStatus: "pending",
+    });
+
     await enqueue({ id: crypto.randomUUID(), resourceType: "Patient",   resourceId: mrn,                    body: JSON.stringify(patient) });
     await enqueue({ id: crypto.randomUUID(), resourceType: "Encounter",  resourceId: provisionalEncounterId, body: JSON.stringify({ ...encounter, id: provisionalEncounterId }), patientId: mrn });
     for (const obs of observations) {
@@ -90,14 +109,7 @@ export function CaptureForm({ onSubmit }: Props) {
       await enqueue({ id: crypto.randomUUID(), resourceType: "Condition", resourceId: crypto.randomUUID(), body: JSON.stringify(condition), patientId: mrn, encounterId: provisionalEncounterId });
     }
 
-    await logCapture({
-      mrn,
-      capturedAt: Date.now(),
-      sex,
-      approximateAge: Number.isFinite(approxAge) && approxAge !== undefined ? approxAge : undefined,
-      complaint,
-      vitalsJson: JSON.stringify(vitals),
-    });
+    await markCaptureComplete(mrn);
 
     void flush();
     setSubmitting(false);
@@ -106,6 +118,25 @@ export function CaptureForm({ onSubmit }: Props) {
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)} style={{ fontFamily: FONT }}>
+
+      {pendingBanner && (
+        <div style={{
+          background: "#1c1a0a", border: `1px solid #ca8a04`,
+          borderRadius: 8, padding: "0.75rem 1rem",
+          marginBottom: "1rem", display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <span style={{ color: "#fbbf24", fontSize: "0.8125rem" }}>
+            A recent capture may not have completed. Check Records before submitting again.
+          </span>
+          <button
+            type="button"
+            onClick={() => setPendingBanner(false)}
+            style={{ background: "none", border: "none", color: "#ca8a04", cursor: "pointer", fontSize: "1rem", padding: "0 0 0 0.75rem" }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Patient info */}
       <Section label="Patient">
@@ -144,8 +175,14 @@ export function CaptureForm({ onSubmit }: Props) {
           <input
             type="text" placeholder="e.g. chest pain, trauma, SOB"
             value={complaint} onChange={(e) => setComplaint(e.target.value)}
+            maxLength={255}
             style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
           />
+          {complaint.length > 200 && (
+            <div style={{ fontSize: "0.6875rem", color: complaint.length >= 255 ? C.danger : C.muted, textAlign: "right", marginTop: "0.2rem" }}>
+              {complaint.length}/255
+            </div>
+          )}
         </div>
       </Section>
 

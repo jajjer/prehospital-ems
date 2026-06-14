@@ -10,6 +10,8 @@ export function buildChiefComplaintCondition(
   ctx: ChiefComplaintContext
 ): Condition {
   const onsetDateTime = ctx.onsetTime ?? new Date().toISOString();
+  // OpenMRS Condition.code.text is limited to 255 characters; longer input returns 500.
+  const text = complaint.slice(0, 255);
 
   return {
     resourceType: "Condition",
@@ -43,7 +45,7 @@ export function buildChiefComplaintCondition(
         ],
       },
     ],
-    code: { text: complaint },
+    code: { text },
     subject: {
       reference: `Patient/${ctx.patientServerUUID}`,
       type: "Patient",

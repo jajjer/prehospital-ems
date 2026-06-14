@@ -28,8 +28,15 @@ type SyncableWorker = typeof self & {
   }
 });
 
-// Activate immediately — take control of all open tabs without waiting for reload.
-self.addEventListener("install", () => self.skipWaiting());
+// Don't skip waiting automatically — the app detects the waiting SW and shows
+// a non-blocking "Update available" banner so in-flight captures aren't interrupted.
+// The app sends SKIP_WAITING when the responder taps the banner.
+self.addEventListener("message", (event: MessageEvent<unknown>) => {
+  if ((event.data as { type?: string } | null)?.type === "SKIP_WAITING") {
+    void self.skipWaiting();
+  }
+});
+
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });

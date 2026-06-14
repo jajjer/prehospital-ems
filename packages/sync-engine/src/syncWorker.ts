@@ -70,14 +70,15 @@ export async function flush(): Promise<void> {
     );
 
     for (const item of [...patients, ...encounters, ...dependents]) {
-      await processItem(item);
+      const result = await processItem(item);
+      if (result === "abort") break;
     }
   } finally {
     flushing = false;
   }
 }
 
-async function processItem(item: WriteQueueItem): Promise<void> {
+async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
   if (!config) return;
 
   const { fhirBaseUrl, authHeader } = config;
@@ -163,6 +164,13 @@ async function processItem(item: WriteQueueItem): Promise<void> {
   }
 
   const statusCode = response.status;
+
+  // Session expired — don't dead-letter. Notify the app to prompt re-auth,
+  // then abort the flush so remaining items aren't tried with a stale token.
+  if (statusCode === 401) {
+    window.dispatchEvent(new CustomEvent("ems:auth-expired"));
+    return "abort";
+  }
 
   if (shouldDeadLetter(item.retryCount, statusCode)) {
     await db.deadLetter.put({

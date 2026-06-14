@@ -50,6 +50,9 @@ export interface CaptureLogEntry {
   complaint: string;
   /** JSON.stringify(VitalsInput) — avoids a cross-package type dep in the DB layer */
   vitalsJson: string;
+  /** Written "pending" before FHIR resources are enqueued; updated to "complete" after.
+   *  A crash between these two writes leaves "pending" — detected on next mount. */
+  submissionStatus?: "pending" | "complete";
 }
 
 export class SyncDatabase extends Dexie {
