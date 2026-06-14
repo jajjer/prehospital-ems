@@ -2,6 +2,12 @@
   "name": "prehospital-ems",
   "private": true,
   "version": "0.0.0",
+  "description": "Offline-first prehospital EMS field capture and sync for OpenMRS",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openmrs/openmrs-ems-prehospital"
+  },
   "packageManager": "pnpm@10.33.4",
   "scripts": {
     "dev": "turbo run dev",

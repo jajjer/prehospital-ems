@@ -1,6 +1,13 @@
 {
   "name": "@prehospital-ems/field-app",
   "version": "0.0.0",
+  "description": "Offline-first PWA for prehospital EMS patient capture on budget Android devices",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openmrs/openmrs-ems-prehospital",
+    "directory": "apps/field-app"
+  },
   "private": true,
   "type": "module",
   "scripts": {

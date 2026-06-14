@@ -30,7 +30,7 @@
 
 ## OpenMRS Contribution Requirements — must complete before submitting a PR
 
-### CONTRIB-1: Add MPL 2.0 LICENSE file and source headers
+### ~~CONTRIB-1: Add MPL 2.0 LICENSE file and source headers~~ DONE
 **What:** OpenMRS requires all contributed code to be licensed under MPL 2.0. Every `.ts` / `.tsx` source file needs a license header block.
 **Why:** Required by the OpenMRS contribution guidelines without exception.
 **Fix:** Add `LICENSE` (MPL 2.0 text) to repo root. Add the standard OpenMRS header comment to each source file in `src/`:
@@ -43,28 +43,28 @@
  */
 ```
 
-### CONTRIB-2: Write a README.md
+### ~~CONTRIB-2: Write a README.md~~ DONE
 **What:** A README covering: what the project is and why it exists, architecture diagram (field-app → sync-engine → fhir2 → OpenMRS), requirements (OpenMRS 3.x, fhir2 module ≥ 2.x, Chrome/Edge on Android), deployment steps (env vars, HTTPS requirement, location UUID, GCS concept UUID), dev setup (`pnpm install && pnpm dev`), known limitations (CIEL subset, GCS UUID, budget OEM battery behavior).
 **Why:** Required for any OpenMRS GitHub project. Reviewers will not engage with a project that has no README.
 
-### CONTRIB-3: Post on OpenMRS Talk before submitting
+### CONTRIB-3: Post on OpenMRS Talk before submitting — DRAFT READY (see TALK_POST_DRAFT.md)
 **What:** OpenMRS requires a design/proposal post on talk.openmrs.org before a new project is submitted to the OpenMRS GitHub organization. Include: problem statement, technical approach, target deployments, FHIR resource mapping, open questions.
 **Why:** Community buy-in and early design feedback are required by the OpenMRS governance process. PRs submitted without a Talk post are typically closed.
 
-### CONTRIB-4: Document which OpenMRS + fhir2 versions are supported
+### ~~CONTRIB-4: Document which OpenMRS + fhir2 versions are supported~~ DONE (in README)
 **What:** Add a compatibility table to the README specifying which OpenMRS Platform version, Reference Application version, and fhir2 module version the app has been tested against.
 **Why:** fhir2 behavior (especially visit-type encounter mapping, identifier location extension, Condition category handling) has changed across versions. OpenMRS reviewers will ask about this.
 **Context:** Currently tested against OpenMRS 3 Reference Application (qa tag), fhir2 as bundled. The exact fhir2 module version should be pinned in the README.
 
-### CONTRIB-5: Add CONTRIBUTING.md
+### ~~CONTRIB-5: Add CONTRIBUTING.md~~ DONE
 **What:** Short document covering: how to set up the dev environment, how to run tests, how to run the Docker stack, PR process, code style.
 **Why:** Standard OpenMRS project requirement.
 
-### CONTRIB-6: Fix package.json metadata
+### ~~CONTRIB-6: Fix package.json metadata~~ DONE
 **What:** Add `"license": "MPL-2.0"`, `"repository"`, and `"description"` fields to root `package.json` and each package's `package.json`.
 **Why:** Required for npm/OpenMRS registry publication and for OSPO license scanning tools used by OpenMRS.
 
-### CONTRIB-7: Pass `tsc --noEmit` with strict mode across all packages
+### ~~CONTRIB-7: Pass `tsc --noEmit` with strict mode across all packages~~ DONE
 **What:** Verify `pnpm typecheck` exits clean. Add `"strict": true` to `tsconfig.base.json` if not already set.
 **Why:** OpenMRS frontend projects require TypeScript strict mode. Reviewers will run the typecheck as part of their review.
 

@@ -1,6 +1,13 @@
 {
   "name": "@prehospital-ems/fhir-contracts",
   "version": "0.0.0",
+  "description": "FHIR R4 resource builders and validators for prehospital EMS capture",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openmrs/openmrs-ems-prehospital",
+    "directory": "packages/fhir-contracts"
+  },
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -19,9 +26,10 @@
   },
   "devDependencies": {
     "@types/fhir": "^0.0.41",
+    "@types/node": "^25.9.3",
+    "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-dts": "^4.5.4",
-    "vitest": "^3.2.3",
-    "typescript": "^5.8.3"
+    "vitest": "^3.2.3"
   }
 }

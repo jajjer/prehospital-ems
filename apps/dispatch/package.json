@@ -1,6 +1,13 @@
 {
   "name": "@prehospital-ems/dispatch",
   "version": "0.0.0",
+  "description": "Dispatch console stub — milestone 2 placeholder (Postgres, MapLibre, RapidPro)",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openmrs/openmrs-ems-prehospital",
+    "directory": "apps/dispatch"
+  },
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^25.9.3",
     "typescript": "^5.8.3"
   }
 }

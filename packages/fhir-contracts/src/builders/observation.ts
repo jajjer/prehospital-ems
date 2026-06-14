@@ -1,3 +1,9 @@
+/**
+ * This Source Code Form is subject to the terms of the Mozilla Public License,
+ * v. 2.0. If a copy of the MPL was not distributed with this file, You can
+ * obtain one at http://mozilla.org/MPL/2.0/. OpenMRS is also distributed under
+ * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
+ */
 import type { Observation } from "fhir/r4";
 
 const CIEL = "https://cielterminology.org";
@@ -91,7 +97,7 @@ export function buildVitalObservations(
   const encounter = { reference: `Encounter/${ctx.encounterServerUUID}`, type: "Encounter" as const };
 
   function obs(
-    concept: (typeof VITAL_CONCEPTS)[keyof typeof VITAL_CONCEPTS],
+    concept: { readonly uuid: string; readonly ciel: string; readonly loinc: string; readonly display: string },
     value: number,
     unit: string
   ): Observation {
