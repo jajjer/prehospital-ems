@@ -81,7 +81,6 @@ export function App() {
 
   function handleSubmit() {
     setSubmitted(true);
-    setTab("records");
   }
 
   return (
