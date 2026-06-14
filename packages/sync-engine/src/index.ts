@@ -11,3 +11,4 @@ export type { SyncWorkerConfig, FinalizeResult } from "./syncWorker.js";
 export { backoffDelay, shouldDeadLetter, BACKOFF } from "./backoff.js";
 export { logCapture, markCaptureComplete, getPendingCapture, getCaptureStatus, retryDeadLettered, pruneOldCaptures } from "./captureLog.js";
 export type { CaptureStatus } from "./captureLog.js";
+export { seedConcepts, getConceptByUUID, getConceptByCielId } from "./conceptCache.js";

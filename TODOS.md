@@ -11,9 +11,7 @@
 
 ## M2 Features
 
-### M2-1: CIEL concept caching
-**What:** Cache a subset of CIEL concepts in the `concepts` Dexie table (v4 migration already prepared) so the field app can validate and display concept names offline.
-**Depends on:** Resolution of open question #2 — which CIEL concepts to include in the offline bundle.
+### ~~M2-1: CIEL concept caching~~ DONE
 
 ### M2-3: Dispatch app — Postgres, MapLibre, RapidPro
 **What:** Implement the `apps/dispatch` stub. A browser-based dispatch console showing active calls on a map, linked to the field captures via the sync engine.
