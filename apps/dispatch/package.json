@@ -1,7 +1,7 @@
 {
   "name": "@prehospital-ems/dispatch",
   "version": "0.0.0",
-  "description": "Dispatch console stub — milestone 2 placeholder (Postgres, MapLibre, RapidPro)",
+  "description": "Browser-based EMS dispatch console with live call map and RapidPro SMS alerting",
   "license": "MPL-2.0",
   "repository": {
     "type": "git",
@@ -11,11 +11,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node src/index.js",
-    "typecheck": "tsc --noEmit"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "maplibre-gl": "^4.7.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
-    "typescript": "^5.8.3"
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "@vitejs/plugin-react": "^4.5.2",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
   }
 }

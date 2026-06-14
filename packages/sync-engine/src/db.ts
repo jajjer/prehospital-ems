@@ -64,6 +64,10 @@ export interface CaptureLogEntry {
   encounterId?: string;
   /** Unix ms timestamp set when the encounter was PATCHed to "finished" on handoff. */
   handoffAt?: number;
+  /** GPS coordinates captured at submission time. Absent if geolocation was unavailable
+   *  or timed out. Used by the dispatch map to pin the incident location. */
+  lat?: number;
+  lng?: number;
 }
 
 export class SyncDatabase extends Dexie {

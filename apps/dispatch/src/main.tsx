@@ -4,4 +4,10 @@
  * obtain one at http://mozilla.org/MPL/2.0/. OpenMRS is also distributed under
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
-// Entry point is src/main.tsx (Vite). This file is retained for workspace compatibility.
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { App } from "./App.js";
+
+const root = document.getElementById("root");
+if (!root) throw new Error("No #root element found");
+createRoot(root).render(<StrictMode><App /></StrictMode>);

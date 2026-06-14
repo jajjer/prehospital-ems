@@ -78,12 +78,28 @@ export function CaptureForm({ onSubmit }: Props) {
     const provisionalEncounterId = `ENC-${crypto.randomUUID().slice(0, 8)}`;
     const approxAge = age ? parseInt(age, 10) : undefined;
 
+    // Attempt GPS capture — non-blocking, 3 s timeout, uses cached position if available
+    let gps: { lat: number; lng: number } | undefined;
+    await new Promise<void>((resolve) => {
+      if (!("geolocation" in navigator)) { resolve(); return; }
+      const timer = setTimeout(resolve, 3_000);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          clearTimeout(timer);
+          gps = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          resolve();
+        },
+        () => { clearTimeout(timer); resolve(); },
+        { maximumAge: 30_000, timeout: 2_500 }
+      );
+    });
+
     const patient = buildProvisionalPatient(mrn, {
       sex,
       locationUUID: LOCATION_UUID,
       ...(Number.isFinite(approxAge) && approxAge !== undefined ? { approximateAge: approxAge } : {}),
     });
-    const encounter = buildPrehospitalEncounter({ patientServerUUID: mrn, locationUUID: LOCATION_UUID });
+    const encounter = buildPrehospitalEncounter({ patientServerUUID: mrn, locationUUID: LOCATION_UUID, ...(gps ? { gps } : {}) });
     const observations = buildVitalObservations(vitals, {
       patientServerUUID: mrn,
       encounterServerUUID: provisionalEncounterId,
@@ -101,6 +117,7 @@ export function CaptureForm({ onSubmit }: Props) {
       vitalsJson: JSON.stringify(vitals),
       submissionStatus: "pending",
       encounterId: provisionalEncounterId,
+      ...(gps ? { lat: gps.lat, lng: gps.lng } : {}),
     });
 
     await enqueue({ id: crypto.randomUUID(), resourceType: "Patient",   resourceId: mrn,                    body: JSON.stringify(patient) });

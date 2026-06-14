@@ -13,8 +13,6 @@
 
 ### ~~M2-1: CIEL concept caching~~ DONE
 
-### M2-3: Dispatch app — Postgres, MapLibre, RapidPro
-**What:** Implement the `apps/dispatch` stub. A browser-based dispatch console showing active calls on a map, linked to the field captures via the sync engine.
-**Note:** Currently a stub. No scope defined beyond the M1 placeholder.
+### ~~M2-3: Dispatch app — MapLibre, RapidPro~~ DONE
 
 ### ~~M2-4: OAuth2 / OIDC authentication~~ DONE
