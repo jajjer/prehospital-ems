@@ -16,25 +16,10 @@
 
 ## Production Blockers — must fix before any field deployment
 
-### BLOCK-1: Handle 401 during sync instead of dead-lettering
-**What:** When the OpenMRS session expires mid-sync, the app gets 401 responses. `shouldDeadLetter` currently treats all 4xx as permanent → the capture is dead-lettered. A 401 should instead surface a re-login prompt so the responder can re-authenticate and retry.
-**Why:** OpenMRS sessions expire (default 2 hours). A paramedic who captured offline and reconnected hours later will silently lose the record to dead-letter.
-**Fix:** In `syncWorker.ts`, intercept 401 before `shouldDeadLetter`; emit a custom event or callback that the app layer handles with a re-auth modal. Do not dead-letter 401s.
-
-### BLOCK-2: Cap chief complaint length to OpenMRS field limit
-**What:** Chief complaint is free text posted to OpenMRS as a Condition.code.text. OpenMRS limits free-text fields to 255 characters. Longer input returns a 500 and gets dead-lettered.
-**Why:** Field responders could type long descriptions; the error would be silent.
-**Fix:** Add a `maxLength={255}` on the complaint input in `CaptureForm.tsx` and a validator in `buildChiefComplaintCondition`.
-
-### BLOCK-3: Prevent duplicate submission on force-close + reopen
-**What:** If a responder taps "Save & Queue", the app writes to Dexie but the success screen hasn't shown yet, and they force-close and reopen — they could re-submit the same patient. Two FHIR Patient resources with different MRNs would be created.
-**Why:** Duplicate charts are a patient safety issue and a data quality problem in OpenMRS.
-**Fix:** Write the captureLog entry (with a pending status flag) *before* enqueuing FHIR resources. On CaptureForm mount, check for any pending captures from this session and show a "Resume?" prompt instead of a blank form.
-
-### BLOCK-4: Service worker update flow — don't interrupt in-flight captures
-**What:** The current `skipWaiting()` + `clients.claim()` means a newly deployed SW takes over immediately, potentially interrupting a capture in progress by refreshing the app shell.
-**Why:** A mid-capture SW swap could lose form state and confuse the responder.
-**Fix:** Remove `skipWaiting()` from the install handler. Instead, detect a waiting SW in the app (`navigator.serviceWorker.addEventListener('controllerchange', ...)`) and show a non-blocking "Update available — tap to refresh" banner that the responder can dismiss until between captures.
+### ~~BLOCK-1: Handle 401 during sync instead of dead-lettering~~ DONE
+### ~~BLOCK-2: Cap chief complaint length to OpenMRS field limit~~ DONE
+### ~~BLOCK-3: Prevent duplicate submission on force-close + reopen~~ DONE
+### ~~BLOCK-4: Service worker update flow — don't interrupt in-flight captures~~ DONE
 
 ### BLOCK-5: Validate on a real budget Android device
 **What:** Run the full offline → capture → reconnect → sync flow on a Tecno, Infinix, or itel device running Android 10–12.
