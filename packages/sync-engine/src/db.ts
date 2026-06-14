@@ -68,6 +68,9 @@ export interface CaptureLogEntry {
    *  or timed out. Used by the dispatch map to pin the incident location. */
   lat?: number;
   lng?: number;
+  /** True when this device joined an existing call rather than creating a new patient.
+   *  The encounterId field holds the server encounter UUID directly — no identityMap lookup. */
+  joined?: boolean;
 }
 
 export class SyncDatabase extends Dexie {

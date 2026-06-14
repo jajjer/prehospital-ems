@@ -205,6 +205,11 @@ function RecordCard({ record, onRetry, onHandoffSuccess }: {
           <div style={{ marginTop: "0.25rem" }}>
             Status: <StatusLabel status={record.status} />
           </div>
+          {record.joined && (
+            <div style={{ marginTop: "0.25rem" }}>
+              Type: <span style={{ color: C.primary }}>Joined existing call</span>
+            </div>
+          )}
         </div>
       )}
     </div>

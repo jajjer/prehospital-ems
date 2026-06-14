@@ -228,7 +228,7 @@ export function App() {
           submitted ? (
             <SuccessScreen onNew={() => { setSubmitted(false); }} />
           ) : (
-            <CaptureForm onSubmit={handleSubmit} />
+            <CaptureForm authHeader={authHeader} onSubmit={handleSubmit} />
           )
         ) : (
           <RecordsScreen />

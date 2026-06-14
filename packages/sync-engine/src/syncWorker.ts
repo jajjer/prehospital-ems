@@ -268,8 +268,11 @@ export async function finalizeEncounter(mrn: string): Promise<FinalizeResult> {
   const captureEntry = await db.captureLog.get(mrn);
   if (!captureEntry?.encounterId) return "not-synced";
 
-  const mapEntry = await db.identityMap.get(captureEntry.encounterId);
-  if (!mapEntry) return "not-synced";
+  // Joined calls store the server UUID directly; others require an identityMap lookup.
+  const serverEncounterId = captureEntry.joined
+    ? captureEntry.encounterId
+    : (await db.identityMap.get(captureEntry.encounterId))?.serverUUID;
+  if (!serverEncounterId) return "not-synced";
 
   const patches = [
     { op: "replace", path: "/status", value: "finished" },
@@ -278,7 +281,7 @@ export async function finalizeEncounter(mrn: string): Promise<FinalizeResult> {
 
   let response: Response;
   try {
-    response = await fetch(`${fhirBaseUrl}/Encounter/${mapEntry.serverUUID}`, {
+    response = await fetch(`${fhirBaseUrl}/Encounter/${serverEncounterId}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json-patch+json",

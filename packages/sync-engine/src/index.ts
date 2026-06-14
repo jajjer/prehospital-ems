@@ -12,3 +12,5 @@ export { backoffDelay, shouldDeadLetter, BACKOFF } from "./backoff.js";
 export { logCapture, markCaptureComplete, getPendingCapture, getCaptureStatus, retryDeadLettered, pruneOldCaptures } from "./captureLog.js";
 export type { CaptureStatus } from "./captureLog.js";
 export { seedConcepts, getConceptByUUID, getConceptByCielId } from "./conceptCache.js";
+export { checkActiveCalls } from "./dedup.js";
+export type { ActiveCallSummary } from "./dedup.js";
