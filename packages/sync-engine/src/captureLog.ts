@@ -5,9 +5,21 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { db, type CaptureLogEntry, type WriteQueueItem } from "./db.js";
+import { encryptCapture, decryptCapture } from "./phiCrypto.js";
 
 export async function logCapture(entry: CaptureLogEntry): Promise<void> {
-  await db.captureLog.put(entry);
+  await db.captureLog.put(await encryptCapture(entry));
+}
+
+/**
+ * Returns the most recent captures (newest first) with PHI fields decrypted,
+ * for the Records screen. Reads forward via the query path then reverses in
+ * memory — a reverse cursor would surface ciphertext (PHI is decrypted after
+ * the read, not inside it).
+ */
+export async function getRecentCaptures(limit = 50): Promise<CaptureLogEntry[]> {
+  const entries = (await db.captureLog.orderBy("capturedAt").toArray()).reverse().slice(0, limit);
+  return Promise.all(entries.map((e) => decryptCapture(e)));
 }
 
 export async function markCaptureComplete(mrn: string): Promise<void> {
@@ -16,8 +28,9 @@ export async function markCaptureComplete(mrn: string): Promise<void> {
 
 /** Returns the first captureLog entry with submissionStatus "pending", if any. */
 export async function getPendingCapture(): Promise<CaptureLogEntry | undefined> {
+  // submissionStatus is cleartext, so we can filter before decrypting.
   const all = await db.captureLog.toArray();
-  return all.find((e) => e.submissionStatus === "pending");
+  return decryptCapture(all.find((e) => e.submissionStatus === "pending"));
 }
 
 export type CaptureStatus = "synced" | "queued" | "failed";

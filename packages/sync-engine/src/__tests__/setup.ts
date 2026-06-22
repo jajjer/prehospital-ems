@@ -5,3 +5,9 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import "fake-indexeddb/auto";
+import { setEncryptionKey, deriveKeyFromPassphrase } from "../crypto.js";
+
+// The encryption middleware blocks all database reads/writes until a key is
+// installed. Provide a deterministic test key so every suite can use the DB.
+const TEST_SALT = new Uint8Array(16); // fixed salt — deterministic in tests
+setEncryptionKey(await deriveKeyFromPassphrase("test-passphrase", TEST_SALT));

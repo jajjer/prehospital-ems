@@ -136,6 +136,7 @@ pnpm lint        # Lint all packages
 - **Budget OEM battery optimization.** Background Sync is killed on Tecno, Infinix, and itel devices without manual whitelisting in Android battery settings. The `visibilitychange` fallback mitigates this but does not eliminate it. Detection and user prompt for battery whitelisting is a milestone 2 feature.
 - **Single-device capture only.** No multi-responder deduplication in milestone 1. If two paramedics capture the same patient independently, two separate OpenMRS patients are created.
 - **CIEL concept subset.** Offline concept validation and display name lookup are not yet implemented. Milestone 2 will cache a CIEL subset in IndexedDB.
+- **PHI at-rest encryption is gated on a device key, not yet a user PIN.** Patient data in IndexedDB is encrypted with AES-256-GCM (so a forensic disk dump yields only ciphertext), but until app lock lands the key is a non-extractable device key recoverable by code in the app origin. The PIN-derived key fully closes the unlocked-stolen-device threat. See [SECURITY.md](SECURITY.md) for the threat model and key lifecycle.
 
 ## License
 

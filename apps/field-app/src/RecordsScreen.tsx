@@ -5,7 +5,7 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { useState, useEffect } from "react";
-import { db, getCaptureStatus, retryDeadLettered, flush, finalizeEncounter, type CaptureLogEntry, type CaptureStatus } from "@prehospital-ems/sync-engine";
+import { getRecentCaptures, getCaptureStatus, retryDeadLettered, flush, finalizeEncounter, type CaptureLogEntry, type CaptureStatus } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 import type { VitalsInput } from "@prehospital-ems/fhir-contracts";
 
@@ -19,7 +19,7 @@ export function RecordsScreen() {
   const [loading, setLoading] = useState(true);
 
   async function load() {
-    const entries = await db.captureLog.orderBy("capturedAt").reverse().limit(50).toArray();
+    const entries = await getRecentCaptures(50);
     const enriched = await Promise.all(
       entries.map(async (e) => ({
         ...e,

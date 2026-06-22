@@ -1,5 +1,11 @@
 # TODOS
 
+## Security (P0 — Pilot-ready)
+
+### ~~#1: Encrypt PHI at rest in IndexedDB~~ DONE
+
+---
+
 ## LMIC Hardening — important for real-world field deployment
 
 ### ~~LMIC-5: Multi-responder deduplication~~ DONE
