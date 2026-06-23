@@ -6,6 +6,7 @@
  */
 import { db, type WriteQueueItem } from "./db.js";
 import { backoffDelay, shouldDeadLetter, BACKOFF } from "./backoff.js";
+import { encryptBody, decryptBody } from "./phiCrypto.js";
 
 export interface SyncWorkerConfig {
   /** Base URL for the fhir2 endpoint, e.g. http://localhost:8069/openmrs/ws/fhir2/R4 */
@@ -82,6 +83,11 @@ export async function flush(): Promise<void> {
     const ordered = await db.writeQueue
       .orderBy("enqueuedAt")
       .toArray();
+
+    // Decrypt PHI bodies after the read completes (outside the IDB transaction).
+    for (const item of ordered) {
+      item.body = await decryptBody(item.body);
+    }
 
     // Process in order — Patients first, Encounters second, then dependents
     const patients = ordered.filter((i) => i.resourceType === "Patient");
@@ -212,7 +218,8 @@ async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
       patientId: item.patientId ?? undefined,
       encounterId: item.encounterId ?? undefined,
       statusCode,
-      body: item.body,
+      // item.body is plaintext here (decrypted in flush) — re-encrypt at rest.
+      body: await encryptBody(item.body),
       failedAt: Date.now(),
     });
     await db.writeQueue.delete(item.id);
@@ -299,12 +306,13 @@ export async function finalizeEncounter(mrn: string): Promise<FinalizeResult> {
   return "ok";
 }
 
-/** Enqueue a FHIR resource for sync. */
+/** Enqueue a FHIR resource for sync. The PHI body is encrypted at rest. */
 export async function enqueue(
   item: Omit<WriteQueueItem, "enqueuedAt" | "retryCount">
 ): Promise<void> {
   await db.writeQueue.put({
     ...item,
+    body: await encryptBody(item.body),
     enqueuedAt: Date.now(),
     retryCount: 0,
   });
