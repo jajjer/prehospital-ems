@@ -5,13 +5,17 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { useState, useEffect } from "react";
-import { initSyncWorker, flush, pruneOldCaptures, seedConcepts } from "@prehospital-ems/sync-engine";
+import {
+  initSyncWorker, flush, pruneOldCaptures, seedConcepts,
+  initAppLock, lock as lockApp, getDeviceId, isRemoteWipeRequested, wipeLocalData,
+} from "@prehospital-ems/sync-engine";
 import { CaptureForm } from "./CaptureForm.js";
 import { StatusBar } from "./StatusBar.js";
 import { LoginScreen } from "./LoginScreen.js";
+import { LockScreen } from "./LockScreen.js";
 import { RecordsScreen } from "./RecordsScreen.js";
 import { C, FONT } from "./theme.js";
-import { FHIR_BASE, REST_BASE } from "./config.js";
+import { FHIR_BASE, REST_BASE, IDLE_LOCK_MS, WIPE_CHECK_URL } from "./config.js";
 import {
   OAUTH2_CLIENT_ID,
   exchangeCodeForToken,
@@ -21,6 +25,7 @@ import {
 } from "./oauth2.js";
 
 type Tab = "capture" | "records";
+type LockStatus = "loading" | "unlocked" | "locked" | "error";
 
 export function App() {
   const [authHeader, setAuthHeader] = useState<string | null>(
@@ -37,14 +42,75 @@ export function App() {
     const p = new URLSearchParams(window.location.search);
     return !!(p.get("code") && p.get("state"));
   });
+  const [lockStatus, setLockStatus] = useState<LockStatus>("loading");
+  const [pinSet, setPinSet] = useState(false);
+
+  // Provision the at-rest key / app-lock state once on start. In device-key mode
+  // (no PIN yet) this installs the key and the app is usable; once a PIN exists
+  // we stay locked until it's entered. Database ops queue on the key gate, so a
+  // read firing before this resolves never races.
+  useEffect(() => {
+    let cancelled = false;
+    initAppLock()
+      .then((s) => {
+        if (cancelled) return;
+        setPinSet(s.pinSet);
+        setLockStatus(s.locked ? "locked" : "unlocked");
+      })
+      .catch((err) => {
+        console.error("[applock] failed to initialize", err);
+        if (!cancelled) setLockStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Re-lock on idle and when the app is backgrounded (only once a PIN is set).
+  // Locking drops the in-memory key but never the offline queue.
+  useEffect(() => {
+    if (!pinSet || lockStatus !== "unlocked") return;
+    const doLock = () => { lockApp(); setLockStatus("locked"); };
+    let timer: ReturnType<typeof setTimeout>;
+    const reset = () => { clearTimeout(timer); timer = setTimeout(doLock, IDLE_LOCK_MS); };
+    const onVisibility = () => { if (document.visibilityState === "hidden") doLock(); };
+    const activity = ["pointerdown", "keydown", "touchstart"] as const;
+    activity.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    document.addEventListener("visibilitychange", onVisibility);
+    reset();
+    return () => {
+      clearTimeout(timer);
+      activity.forEach((e) => window.removeEventListener(e, reset));
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [pinSet, lockStatus]);
+
+  // Remote wipe: on launch and on reconnect, ask the admin backend whether this
+  // device has been flagged. Fail-safe — only an explicit flag wipes.
+  useEffect(() => {
+    const wipeUrl = WIPE_CHECK_URL;
+    if (!authHeader || lockStatus !== "unlocked" || !wipeUrl) return;
+    const check = async () => {
+      try {
+        const deviceId = await getDeviceId();
+        if (await isRemoteWipeRequested({ url: wipeUrl, deviceId, authHeader })) {
+          await wipeLocalData();
+          sessionStorage.clear();
+          clearOAuth2Tokens();
+          window.location.reload();
+        }
+      } catch { /* fail-safe: never wipe on a transient error */ }
+    };
+    void check();
+    window.addEventListener("online", check);
+    return () => window.removeEventListener("online", check);
+  }, [authHeader, lockStatus]);
 
   useEffect(() => {
-    if (authHeader) {
+    if (authHeader && lockStatus === "unlocked") {
       initSyncWorker({ fhirBaseUrl: FHIR_BASE, authHeader });
       void pruneOldCaptures();
       void seedConcepts(REST_BASE, authHeader);
     }
-  }, [authHeader]);
+  }, [authHeader, lockStatus]);
 
   // Complete OAuth2 authorization-code exchange when redirected back from OpenMRS.
   useEffect(() => {
@@ -132,6 +198,45 @@ export function App() {
     }).catch(() => undefined);
   }
 
+  function handleLogout() {
+    sessionStorage.removeItem("ems_auth");
+    clearOAuth2Tokens();
+    setAuthHeader(null);
+  }
+
+  function handleLock() {
+    lockApp();
+    setLockStatus("locked");
+  }
+
+  function handleSubmit() {
+    setSubmitted(true);
+  }
+
+  if (lockStatus === "loading") {
+    return (
+      <div style={{ minHeight: "100dvh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT }}>
+        <span style={{ color: C.muted, fontSize: "0.9375rem" }}>Unlocking…</span>
+      </div>
+    );
+  }
+
+  if (lockStatus === "error") {
+    return (
+      <div style={{ minHeight: "100dvh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem", textAlign: "center", fontFamily: FONT }}>
+        <span style={{ color: C.danger, fontSize: "0.9375rem" }}>
+          Could not unlock secure storage on this device. Close and reopen the app.
+        </span>
+      </div>
+    );
+  }
+
+  // App lock comes before everything else: local PHI must stay sealed until the
+  // PIN is entered, regardless of sign-in state.
+  if (lockStatus === "locked") {
+    return <LockScreen mode="unlock" onDone={() => setLockStatus("unlocked")} />;
+  }
+
   if (completingOAuth2) {
     return (
       <div style={{ minHeight: "100dvh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT }}>
@@ -144,14 +249,9 @@ export function App() {
     return <LoginScreen onLogin={(auth) => setAuthHeader(auth)} />;
   }
 
-  function handleLogout() {
-    sessionStorage.removeItem("ems_auth");
-    clearOAuth2Tokens();
-    setAuthHeader(null);
-  }
-
-  function handleSubmit() {
-    setSubmitted(true);
+  // First sign-in with no PIN yet: require the user to set one before capturing.
+  if (!pinSet) {
+    return <LockScreen mode="create" onDone={() => setPinSet(true)} />;
   }
 
   return (
@@ -197,7 +297,7 @@ export function App() {
         <ReAuthModal onReAuth={handleReAuth} useOAuth2={!!OAUTH2_CLIENT_ID} />
       )}
 
-      <StatusBar onLogout={handleLogout} />
+      <StatusBar onLogout={handleLogout} onLock={handleLock} />
 
       {/* Tab bar */}
       <div style={{

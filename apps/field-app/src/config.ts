@@ -22,3 +22,14 @@ export const LOCATION_UUID =
 // set VITE_GCS_CONCEPT_UUID if the full CIEL dictionary is loaded (CIEL 162643).
 export const GCS_CONCEPT_UUID =
   (import.meta.env.VITE_GCS_CONCEPT_UUID as string | undefined) ?? "8a7ff9be-79af-4485-9499-094597f01335";
+
+// App lock: re-lock the UI after this many minutes of inactivity. The offline
+// queue is never dropped — only the in-memory key is. Defaults to 5 minutes.
+export const IDLE_LOCK_MS =
+  Number(import.meta.env.VITE_IDLE_LOCK_MINUTES ?? 5) * 60_000;
+
+// Remote wipe: optional endpoint that returns `{ "wipe": true }` for a flagged
+// device id. When unset, the remote-wipe check is skipped (safe default for
+// deployments without the admin backend). See SECURITY.md.
+export const WIPE_CHECK_URL =
+  import.meta.env.VITE_WIPE_CHECK_URL as string | undefined;

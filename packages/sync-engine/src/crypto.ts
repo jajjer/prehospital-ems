@@ -24,7 +24,7 @@ const ENVELOPE_PREFIX = "enc:v1:";
 /** AES-GCM recommends a 96-bit (12-byte) IV. */
 const IV_BYTES = 12;
 /** OWASP-recommended PBKDF2-SHA256 work factor (2023). */
-const PBKDF2_ITERATIONS = 210_000;
+export const DEFAULT_PBKDF2_ITERATIONS = 210_000;
 
 function subtle(): SubtleCrypto {
   const s = globalThis.crypto?.subtle;
@@ -83,6 +83,15 @@ export function isUnlocked(): boolean {
 }
 
 /**
+ * The active key object, or null if the app is locked. Used by the app-lock
+ * flow to re-wrap the in-memory data key under a new key-encryption key (e.g.
+ * when a PIN is first set) without re-encrypting any PHI.
+ */
+export function getActiveKey(): CryptoKey | null {
+  return currentKey;
+}
+
+/**
  * Drop the in-memory key and re-arm the gate. Subsequent database reads/writes
  * block until {@link setEncryptionKey} is called again (e.g. after re-entering
  * the app-lock PIN). The encrypted data on disk is untouched.
@@ -106,7 +115,7 @@ export function lockEncryption(): void {
 export async function deriveKeyFromPassphrase(
   passphrase: string,
   salt: Uint8Array,
-  iterations: number = PBKDF2_ITERATIONS,
+  iterations: number = DEFAULT_PBKDF2_ITERATIONS,
 ): Promise<CryptoKey> {
   const baseKey = await subtle().importKey(
     "raw",
@@ -122,6 +131,59 @@ export async function deriveKeyFromPassphrase(
     false,
     ["encrypt", "decrypt"],
   );
+}
+
+// ---------------------------------------------------------------------------
+// Data-key wrapping (envelope-key scheme)
+//
+// PHI is always encrypted under a single random Data Encryption Key (DEK). The
+// DEK never changes for the life of the install, so existing ciphertext stays
+// readable no matter how the app is unlocked. What changes is the Key
+// Encryption Key (KEK) that the DEK is *wrapped* under: the non-extractable
+// device key (interim) or a PIN-derived key (steady state). Setting or changing
+// a PIN therefore just re-wraps the DEK — no PHI is ever re-encrypted.
+//
+// Wrapping is plain AES-GCM over the DEK's raw bytes (rather than SubtleCrypto's
+// wrapKey, which has thinner runtime support): GCM's auth tag means unwrapping
+// with the wrong KEK throws instead of yielding a garbage key.
+// ---------------------------------------------------------------------------
+
+/** Generate a fresh, extractable AES-256-GCM data key. */
+export async function generateDataKey(): Promise<CryptoKey> {
+  // extractable: true so it can be exported for wrapping. The raw bytes only
+  // ever leave the subsystem to be immediately re-encrypted under a KEK.
+  return subtle().generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+}
+
+/** Encrypt (wrap) a data key under a key-encryption key. */
+export async function wrapDataKey(
+  dek: CryptoKey,
+  kek: CryptoKey,
+): Promise<{ wrapped: Uint8Array; iv: Uint8Array }> {
+  const raw = new Uint8Array(await subtle().exportKey("raw", dek));
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const wrapped = new Uint8Array(
+    await subtle().encrypt({ name: "AES-GCM", iv }, kek, raw as BufferSource),
+  );
+  return { wrapped, iv };
+}
+
+/**
+ * Decrypt (unwrap) a data key with a key-encryption key. Rejects if the KEK is
+ * wrong (GCM auth-tag failure) — which is exactly how a wrong PIN is detected.
+ */
+export async function unwrapDataKey(
+  wrapped: Uint8Array,
+  iv: Uint8Array,
+  kek: CryptoKey,
+): Promise<CryptoKey> {
+  const raw = await subtle().decrypt(
+    { name: "AES-GCM", iv: iv as BufferSource },
+    kek,
+    wrapped as BufferSource,
+  );
+  // extractable: true so the DEK can be re-wrapped later (e.g. on PIN change).
+  return subtle().importKey("raw", raw, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
 }
 
 // ---------------------------------------------------------------------------

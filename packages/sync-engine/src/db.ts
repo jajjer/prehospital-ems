@@ -73,6 +73,8 @@ export interface CaptureLogEntry {
   joined?: boolean;
 }
 
+export const SYNC_DB_NAME = "prehospital-ems-sync";
+
 export class SyncDatabase extends Dexie {
   writeQueue!: Table<WriteQueueItem, string>;
   deadLetter!: Table<DeadLetterItem, string>;
@@ -81,7 +83,7 @@ export class SyncDatabase extends Dexie {
   concepts!: Table<ConceptCacheEntry, string>;
 
   constructor() {
-    super("prehospital-ems-sync");
+    super(SYNC_DB_NAME);
 
     // Close this connection when another tab/SW wants to upgrade the schema,
     // so the upgrade isn't blocked indefinitely.
