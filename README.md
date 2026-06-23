@@ -84,6 +84,8 @@ All configuration is via Vite environment variables (prefix `VITE_`). Set them i
 | `VITE_OPENMRS_BASE_URL` | `/openmrs` (proxied) | Absolute URL to your OpenMRS instance, e.g. `https://openmrs.example.org/openmrs` |
 | `VITE_LOCATION_UUID` | `44c3efb0-2583-4c80-a79e-1f756a03c0a1` | UUID of the OpenMRS location to associate with patients and encounters. Default is "Outpatient Clinic" in the reference app. |
 | `VITE_GCS_CONCEPT_UUID` | `8a7ff9be-79af-4485-9499-094597f01335` | UUID of the GCS Total concept. The default was created manually in the reference instance. If you load the full CIEL dictionary, use the CIEL 162643 UUID from your instance. |
+| `VITE_IDLE_LOCK_MINUTES` | `5` | Minutes of inactivity before the app re-locks and requires the PIN again. The offline queue is never dropped on lock. See [SECURITY.md](SECURITY.md#app-lock-session-timeout--remote-wipe). |
+| `VITE_WIPE_CHECK_URL` | _(unset)_ | Optional admin endpoint for remote wipe. The app GETs it with a `deviceId` query param; a `{ "wipe": true }` response erases all local data. When unset, remote wipe is disabled. |
 
 In production, `VITE_OPENMRS_BASE_URL` must point to an HTTPS endpoint. The field app uses Basic auth over HTTPS; OAuth2/OIDC is a milestone 2 target.
 

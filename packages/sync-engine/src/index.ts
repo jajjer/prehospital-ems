@@ -19,12 +19,30 @@ export {
   getEncryptionKey,
   lockEncryption,
   isUnlocked,
+  getActiveKey,
   deriveKeyFromPassphrase,
+  generateDataKey,
+  wrapDataKey,
+  unwrapDataKey,
   encryptString,
   decryptString,
   encryptField,
   decryptField,
   isEnvelope,
 } from "./crypto.js";
-export { initEncryption } from "./deviceKey.js";
-export type { InitEncryptionOptions } from "./deviceKey.js";
+export {
+  initAppLock,
+  isPinSet,
+  setupPin,
+  unlockWithPin,
+  changePin,
+  getFailedAttempts,
+  lock,
+  getDeviceId,
+  MIN_PIN_LENGTH,
+  MAX_PIN_ATTEMPTS,
+} from "./appLock.js";
+export type { AppLockState, AppLockMode, UnlockResult } from "./appLock.js";
+export { wipeLocalData } from "./wipe.js";
+export { isRemoteWipeRequested } from "./remoteWipe.js";
+export type { RemoteWipeOptions } from "./remoteWipe.js";
