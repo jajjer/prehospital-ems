@@ -43,6 +43,15 @@ export {
   MAX_PIN_ATTEMPTS,
 } from "./appLock.js";
 export type { AppLockState, AppLockMode, UnlockResult } from "./appLock.js";
+export {
+  getAuthHeader,
+  getRefreshToken,
+  getTokenExpiry,
+  setAuthHeader,
+  setRefreshToken,
+  reconcileTokenStorage,
+  clearTokens,
+} from "./tokenStore.js";
 export { wipeLocalData } from "./wipe.js";
 export { isRemoteWipeRequested } from "./remoteWipe.js";
 export type { RemoteWipeOptions } from "./remoteWipe.js";

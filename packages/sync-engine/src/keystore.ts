@@ -42,13 +42,36 @@ export interface KeyMetaRow {
   deviceId?: string;
 }
 
+/**
+ * An auth token (access/auth header or refresh token) held encrypted at rest.
+ *
+ * The ciphertext is an AES-GCM envelope produced under the same data key that
+ * protects PHI, so a stolen, locked device yields only ciphertext — there is no
+ * plaintext token on disk. `expiresAt` is the access-token expiry (epoch ms); it
+ * is not sensitive and is kept in cleartext so a proactive refresh can be
+ * scheduled without first unwrapping the token. See {@link ./tokenStore} and
+ * SECURITY.md.
+ */
+export interface TokenRow {
+  id: string;
+  /** AES-GCM `enc:v1:…` envelope of the token string. */
+  ciphertext: string;
+  /** Access-token expiry, epoch ms (not secret). */
+  expiresAt?: number;
+}
+
 export const KEYSTORE_DB_NAME = "prehospital-ems-keystore";
 
 class KeyStoreDatabase extends Dexie {
   meta!: Table<KeyMetaRow, string>;
+  tokens!: Table<TokenRow, string>;
   constructor() {
     super(KEYSTORE_DB_NAME);
     this.version(1).stores({ meta: "id" });
+    // v2 adds the encrypted auth-token table (issue #3). The existing `meta`
+    // store is unchanged, so installs upgrade in place without touching the
+    // wrapped data key or any PHI.
+    this.version(2).stores({ meta: "id", tokens: "id" });
   }
 }
 
