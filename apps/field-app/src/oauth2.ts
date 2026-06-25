@@ -5,6 +5,12 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { OPENMRS_BASE } from "./config.js";
+import {
+  setAuthHeader,
+  setRefreshToken,
+  getRefreshToken,
+  getTokenExpiry,
+} from "@prehospital-ems/sync-engine";
 
 // Set VITE_OAUTH2_CLIENT_ID to enable OAuth2/OIDC. When unset the app falls
 // back to Basic auth — safe for M1 LMIC deployments without an OAuth2 server.
@@ -14,11 +20,16 @@ export const OAUTH2_CLIENT_ID =
 const AUTHORIZATION_ENDPOINT = `${OPENMRS_BASE}/oauth2/authorize`;
 const TOKEN_ENDPOINT = `${OPENMRS_BASE}/oauth2/token`;
 
+// Refresh the access token this many ms before it actually expires, so a request
+// never goes out with an almost-dead token (and clock skew has some slack).
+const REFRESH_SKEW_MS = 60_000;
+
+// Short-lived, non-sensitive PKCE handshake values — they must survive the
+// authorization redirect (a full navigation) before the app has unlocked, so
+// they stay in sessionStorage. The tokens themselves never touch it.
 const SK = {
   verifier: "ems_pkce_verifier",
   state:    "ems_oauth2_state",
-  refresh:  "ems_refresh_token",
-  expiry:   "ems_token_expiry",
 } as const;
 
 function base64url(buf: Uint8Array): string {
@@ -60,13 +71,13 @@ interface TokenResponse {
   expires_in?: number;
 }
 
-function storeTokens(data: TokenResponse): string {
+async function storeTokens(data: TokenResponse): Promise<string> {
   const authHeader = `Bearer ${data.access_token}`;
-  sessionStorage.setItem("ems_auth", authHeader);
-  if (data.refresh_token) sessionStorage.setItem(SK.refresh, data.refresh_token);
-  if (data.expires_in) {
-    sessionStorage.setItem(SK.expiry, String(Date.now() + data.expires_in * 1_000));
-  }
+  const expiresAt = data.expires_in ? Date.now() + data.expires_in * 1_000 : null;
+  await setAuthHeader(authHeader);
+  // A token endpoint may omit refresh_token on refresh (rotation off); keep the
+  // existing one in that case rather than dropping it.
+  await setRefreshToken(data.refresh_token ?? getRefreshToken(), expiresAt);
   return authHeader;
 }
 
@@ -98,20 +109,20 @@ export async function exchangeCodeForToken(
       }),
     });
     if (!res.ok) return null;
-    return storeTokens(await res.json() as TokenResponse);
+    return await storeTokens(await res.json() as TokenResponse);
   } catch {
     return null;
   }
 }
 
 /**
- * Attempt a silent token refresh using the stored refresh token.
+ * Attempt a silent token refresh using the in-memory refresh token.
  * Returns the new Bearer auth header on success, or null if the refresh
  * token is absent or rejected (caller should prompt re-auth).
  */
 export async function refreshAccessToken(): Promise<string | null> {
   if (!OAUTH2_CLIENT_ID) return null;
-  const refreshToken = sessionStorage.getItem(SK.refresh);
+  const refreshToken = getRefreshToken();
   if (!refreshToken) return null;
 
   try {
@@ -125,18 +136,52 @@ export async function refreshAccessToken(): Promise<string | null> {
       }),
     });
     if (!res.ok) {
-      sessionStorage.removeItem(SK.refresh);
-      sessionStorage.removeItem(SK.expiry);
+      await setRefreshToken(null, null);
       return null;
     }
-    return storeTokens(await res.json() as TokenResponse);
+    return await storeTokens(await res.json() as TokenResponse);
   } catch {
     return null;
   }
 }
 
-/** Remove all OAuth2 tokens from sessionStorage (call on logout). */
-export function clearOAuth2Tokens(): void {
-  sessionStorage.removeItem(SK.refresh);
-  sessionStorage.removeItem(SK.expiry);
+/**
+ * Milliseconds until a proactive refresh should fire for a token expiring at
+ * `expiresAt`, clamped so an already-expired (or about-to-expire) token
+ * refreshes immediately. Pure helper, separated out so it is unit-testable.
+ */
+export function computeRefreshDelay(expiresAt: number, now: number): number {
+  return Math.max(0, expiresAt - now - REFRESH_SKEW_MS);
+}
+
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Schedule a silent refresh to fire shortly before the access token expires,
+ * rather than waiting for a request to come back 401. Re-arms itself after each
+ * successful refresh. `onRefreshed` receives the new auth header so the app can
+ * update its state and re-init the sync worker. No-ops without OAuth2 or a known
+ * expiry (e.g. the Basic-auth path).
+ */
+export function scheduleProactiveRefresh(onRefreshed: (authHeader: string) => void): void {
+  stopProactiveRefresh();
+  if (!OAUTH2_CLIENT_ID) return;
+  const expiresAt = getTokenExpiry();
+  if (expiresAt === null) return;
+  refreshTimer = setTimeout(() => {
+    void refreshAccessToken().then((authHeader) => {
+      if (authHeader) {
+        onRefreshed(authHeader);
+        scheduleProactiveRefresh(onRefreshed);
+      }
+    });
+  }, computeRefreshDelay(expiresAt, Date.now()));
+}
+
+/** Cancel any pending proactive refresh (call on logout / unmount). */
+export function stopProactiveRefresh(): void {
+  if (refreshTimer !== null) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
 }

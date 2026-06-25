@@ -5,6 +5,7 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { useState } from "react";
+import { setAuthHeader } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 import { REST_BASE } from "./config.js";
 import { OAUTH2_CLIENT_ID, startOAuth2Login } from "./oauth2.js";
@@ -31,7 +32,7 @@ export function LoginScreen({ onLogin }: Props) {
       });
       const data = await res.json() as { authenticated?: boolean };
       if (data.authenticated) {
-        sessionStorage.setItem("ems_auth", authHeader);
+        await setAuthHeader(authHeader);
         onLogin(authHeader);
       } else {
         setError("Invalid username or password.");

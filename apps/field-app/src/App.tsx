@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import {
   initSyncWorker, flush, pruneOldCaptures, seedConcepts,
   initAppLock, lock as lockApp, getDeviceId, isRemoteWipeRequested, wipeLocalData,
+  reconcileTokenStorage, clearTokens, setAuthHeader as persistAuthHeader,
 } from "@prehospital-ems/sync-engine";
 import { CaptureForm } from "./CaptureForm.js";
 import { StatusBar } from "./StatusBar.js";
@@ -21,16 +22,17 @@ import {
   exchangeCodeForToken,
   refreshAccessToken,
   startOAuth2Login,
-  clearOAuth2Tokens,
+  scheduleProactiveRefresh,
+  stopProactiveRefresh,
 } from "./oauth2.js";
 
 type Tab = "capture" | "records";
 type LockStatus = "loading" | "unlocked" | "locked" | "error";
 
 export function App() {
-  const [authHeader, setAuthHeader] = useState<string | null>(
-    () => sessionStorage.getItem("ems_auth")
-  );
+  // Restored asynchronously from encrypted-at-rest storage once the app unlocks
+  // — never read from plaintext web storage (issue #3).
+  const [authHeader, setAuthHeader] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("capture");
   const [submitted, setSubmitted] = useState(false);
   const [swUpdateReady, setSwUpdateReady] = useState(false);
@@ -94,7 +96,7 @@ export function App() {
         if (await isRemoteWipeRequested({ url: wipeUrl, deviceId, authHeader })) {
           await wipeLocalData();
           sessionStorage.clear();
-          clearOAuth2Tokens();
+          stopProactiveRefresh();
           window.location.reload();
         }
       } catch { /* fail-safe: never wipe on a transient error */ }
@@ -111,6 +113,26 @@ export function App() {
       void seedConcepts(REST_BASE, authHeader);
     }
   }, [authHeader, lockStatus]);
+
+  // Restore the auth header from encrypted-at-rest storage once the app unlocks,
+  // so a service-worker-update reload mid-shift doesn't force a re-login. The
+  // tokens are decryptable only after the data key is installed (i.e. unlocked).
+  useEffect(() => {
+    if (lockStatus !== "unlocked") return;
+    let cancelled = false;
+    void reconcileTokenStorage().then((restored) => {
+      if (!cancelled && restored) setAuthHeader(restored);
+    });
+    return () => { cancelled = true; };
+  }, [lockStatus]);
+
+  // Proactive silent refresh (OAuth2): mint a fresh access token shortly before
+  // the current one expires, instead of only reacting to a 401 mid-sync.
+  useEffect(() => {
+    if (!authHeader || !OAUTH2_CLIENT_ID) return;
+    scheduleProactiveRefresh((newAuth) => setAuthHeader(newAuth));
+    return () => stopProactiveRefresh();
+  }, [authHeader]);
 
   // Complete OAuth2 authorization-code exchange when redirected back from OpenMRS.
   useEffect(() => {
@@ -199,8 +221,8 @@ export function App() {
   }
 
   function handleLogout() {
-    sessionStorage.removeItem("ems_auth");
-    clearOAuth2Tokens();
+    stopProactiveRefresh();
+    void clearTokens();
     setAuthHeader(null);
   }
 
@@ -356,7 +378,7 @@ function ReAuthModal({ onReAuth, useOAuth2 }: { onReAuth: (auth: string) => void
       });
       const data = await res.json() as { authenticated?: boolean };
       if (data.authenticated) {
-        sessionStorage.setItem("ems_auth", auth);
+        await persistAuthHeader(auth);
         onReAuth(auth);
       } else {
         setError("Invalid credentials.");

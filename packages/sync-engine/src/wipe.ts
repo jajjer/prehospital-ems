@@ -8,6 +8,7 @@ import Dexie from "dexie";
 import { db, SYNC_DB_NAME } from "./db.js";
 import { lockEncryption } from "./crypto.js";
 import { deleteKeyStore } from "./keystore.js";
+import { resetTokenMemory } from "./tokenStore.js";
 
 /**
  * Irrecoverably clear all local data: every PHI table and all key material.
@@ -19,11 +20,12 @@ import { deleteKeyStore } from "./keystore.js";
  * recovers the (already-deleted) PHI tables has nothing to decrypt them with.
  *
  * The encryption gate is re-armed first so any in-flight database access blocks
- * rather than racing the deletion. Auth tokens live in sessionStorage and are
- * cleared by the caller (the field app), which also reloads to a clean state.
+ * rather than racing the deletion. The encrypted auth tokens live in the
+ * keystore and so are destroyed with it; the in-memory copies are dropped here.
  */
 export async function wipeLocalData(): Promise<void> {
   lockEncryption();
+  resetTokenMemory();
   db.close();
   await Dexie.delete(SYNC_DB_NAME);
   await deleteKeyStore();

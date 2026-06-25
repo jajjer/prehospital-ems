@@ -120,15 +120,75 @@ gap by gating the data key behind a user secret.
   endpoint is optional; when `VITE_WIPE_CHECK_URL` is unset the check is skipped.
 
 A **wipe** (`wipe.ts`) deletes both the PHI database and the keystore — every PHI
-table, the wrapped data key, and all key material. The data key is destroyed, so
-even an attacker who later recovers the (already-deleted) tables has nothing to
-decrypt them with. Auth tokens in `sessionStorage` are cleared by the app, which
-then reloads to a clean state.
+table, the wrapped data key, all key material, and the encrypted auth tokens. The
+data key is destroyed, so even an attacker who later recovers the (already-
+deleted) tables has nothing to decrypt them with. The in-memory token copies are
+dropped in the same call, and the app reloads to a clean state.
 
 Biometric unlock (WebAuthn) is intentionally **not** implemented yet: releasing
 usable key material from an authenticator requires the WebAuthn PRF extension,
 whose support on the target budget devices is still uneven. The PIN is the
 portable, fully-offline baseline; biometrics can layer on later.
+
+## Auth token storage
+
+Access tokens, the OAuth2 refresh token, and the Basic-auth header used to live
+in `sessionStorage` as plaintext — readable by any injected script, and (for the
+refresh token) persisted across reloads in the clear. They are now handled by
+`packages/sync-engine/src/tokenStore.ts`:
+
+- **In memory.** The active auth header and refresh token are held in module
+  state for the unlocked session and are the single source of truth the app and
+  sync worker read. They are **never** written to web storage in plaintext.
+- **Encrypted at rest.** So a session survives a reload — a service-worker update
+  reloads the page mid-shift — the same values are persisted to the keystore as
+  AES-GCM `enc:v1:…` envelopes under the **same data key that protects PHI**.
+  The access-token expiry is stored alongside in cleartext (it is not sensitive)
+  so a proactive refresh can be scheduled without unwrapping the token first.
+
+Because the tokens are wrapped under the data key, a stolen **locked** device
+yields only ciphertext — there is no plaintext token on disk — and the tokens are
+destroyed together with the keystore on logout, remote wipe, or brute-force auto-
+wipe. Persistence is gated on the unlock state: while the app is locked the
+tokens are kept in memory only and reconciled to disk once it unlocks, so a token
+write never blocks on an app that has not been unlocked yet.
+
+**Proactive refresh.** Instead of only reacting to a `401` from the sync worker,
+the app schedules a silent refresh to fire ~60s before the access token expires
+(`oauth2.ts`, `scheduleProactiveRefresh`), re-arming itself after each refresh.
+The 401 path remains as a fallback. PKCE handshake values (`verifier`, `state`)
+stay in `sessionStorage`: they are short-lived, non-sensitive, and must survive
+the authorization redirect before the app has unlocked.
+
+**Verify it:** in Chrome DevTools → Application, `sessionStorage` no longer holds
+`ems_auth` / `ems_refresh_token`, and the keystore's `tokens` table reads as
+`enc:v1:…` envelopes, not bearer/refresh tokens.
+
+## Content-Security-Policy
+
+The built field app ships a Content-Security-Policy (`apps/field-app/vite.config.ts`,
+injected as a `<meta http-equiv>` into `index.html` at **build time only** — Vite's
+dev server needs inline scripts and `eval` for HMR, which a strict policy breaks).
+The bundle is entirely same-origin hashed assets plus a same-origin service
+worker, so `default-src 'self'` with `script-src 'self'` / `worker-src 'self'`
+admits the app without `'unsafe-inline'` or `'unsafe-eval'` for scripts. The only
+outbound connection is to OpenMRS (and the optional remote-wipe endpoint); when
+those are configured as absolute URLs their origins are added to `connect-src`,
+and the default same-origin reverse-proxy path (`/openmrs`) is already covered by
+`'self'`. Since the policy lives in the precached `index.html`, **it applies
+offline too** — the app keeps functioning with no network.
+
+`frame-ancestors`, `X-Frame-Options`, HSTS, and `Referrer-Policy` cannot be set
+from a `<meta>` tag; the host/CDN should send them as HTTP response headers. The
+recommended production header set:
+
+```
+Content-Security-Policy: <as injected, optionally with frame-ancestors 'none'>
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=63072000; includeSubDomains
+```
 
 ## Threat model
 
@@ -138,7 +198,7 @@ portable, fully-offline baseline; biometrics can layer on later.
 | Lost/stolen device → attacker unlocks the phone and opens the app   | **Yes, once a PIN is set.** The data key is unwrapped only by the PIN; idle/background re-lock and a 10-attempt auto-wipe bound the exposure. Before a PIN is set (interim device-key mode), code in the app's origin can still decrypt — which is why a PIN is mandatory at first sign-in. |
 | Lost device reported to an admin                                    | **Yes (when configured).** Remote wipe clears all local data on next launch/reconnect; see [App lock](#app-lock-session-timeout--remote-wipe). |
 | Brute-force of the PIN                                              | **Bounded.** PBKDF2 (210k iters) slows each guess; 10 consecutive failures wipe local data. |
-| XSS / malicious script running in the app origin                    | Not addressed here — see [#3](https://github.com/jajjer/prehospital-ems/issues/3) (token hardening + CSP).   |
+| XSS / malicious script running in the app origin                    | **Reduced.** No auth tokens sit in plaintext web storage (in-memory + encrypted-at-rest), and a build-time CSP (`script-src 'self'`, no `'unsafe-inline'`/`'unsafe-eval'`) shrinks the injection surface. A script already executing in the origin can still read in-memory tokens while unlocked — defense-in-depth, not elimination. See [Auth token storage](#auth-token-storage) and [Content-Security-Policy](#content-security-policy). |
 | Network interception                                                | Out of scope for at-rest encryption; transport is HTTPS (see Deployment in the README).                     |
 
 ## Known limitations
