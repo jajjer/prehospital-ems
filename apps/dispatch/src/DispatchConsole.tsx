@@ -10,13 +10,17 @@ import { FHIR_BASE, RAPIDPRO_ENABLED } from "./config.js";
 import { fetchActiveCalls, type ActiveCall } from "./fhir.js";
 import { sendAlert } from "./rapidpro.js";
 import { DispatchMap } from "./DispatchMap.js";
+import { FleetHealth } from "./FleetHealth.js";
 
 interface Props {
   authHeader: string;
   onLogout: () => void;
 }
 
+type View = "calls" | "fleet";
+
 export function DispatchConsole({ authHeader, onLogout }: Props) {
+  const [view, setView]             = useState<View>("calls");
   const [calls, setCalls]           = useState<ActiveCall[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError]           = useState<string | null>(null);
@@ -54,20 +58,43 @@ export function DispatchConsole({ authHeader, onLogout }: Props) {
             letterSpacing: "0.08em", textTransform: "uppercase",
           }}>EMS</span>
           <span style={{ fontWeight: 600, fontSize: "0.9375rem" }}>Dispatch Console</span>
+
+          {/* View toggle */}
+          <div style={{ display: "flex", gap: "0.25rem", marginLeft: "0.75rem" }}>
+            {(["calls", "fleet"] as View[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                style={{
+                  background: view === v ? C.surface : "transparent",
+                  border: `1px solid ${view === v ? C.border : "transparent"}`,
+                  borderRadius: 6, padding: "0.2rem 0.6rem",
+                  color: view === v ? C.text : C.muted,
+                  fontFamily: FONT, fontSize: "0.75rem", fontWeight: view === v ? 600 : 400,
+                  cursor: "pointer",
+                }}
+              >
+                {v === "calls" ? "Calls" : "Fleet health"}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "1rem", fontSize: "0.75rem" }}>
-          {error
-            ? <span style={{ color: C.danger }}>{error}</span>
-            : lastRefresh && (
-              <span style={{ color: C.muted }}>
-                Updated {lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-              </span>
-            )
-          }
-          <span style={{ color: C.muted }}>
-            {calls.length} active call{calls.length !== 1 ? "s" : ""}
-          </span>
+          {view === "calls" && (
+            error
+              ? <span style={{ color: C.danger }}>{error}</span>
+              : lastRefresh && (
+                <span style={{ color: C.muted }}>
+                  Updated {lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </span>
+              )
+          )}
+          {view === "calls" && (
+            <span style={{ color: C.muted }}>
+              {calls.length} active call{calls.length !== 1 ? "s" : ""}
+            </span>
+          )}
           <button
             onClick={onLogout}
             style={{
@@ -81,7 +108,12 @@ export function DispatchConsole({ authHeader, onLogout }: Props) {
         </div>
       </header>
 
-      {/* Split pane */}
+      {view === "fleet" ? (
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+          <FleetHealth authHeader={authHeader} />
+        </div>
+      ) : (
+      /* Split pane */
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
         {/* Left: call list */}
@@ -116,6 +148,7 @@ export function DispatchConsole({ authHeader, onLogout }: Props) {
           />
         </div>
       </div>
+      )}
     </div>
   );
 }

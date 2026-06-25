@@ -16,7 +16,7 @@ import { LoginScreen } from "./LoginScreen.js";
 import { LockScreen } from "./LockScreen.js";
 import { RecordsScreen } from "./RecordsScreen.js";
 import { C, FONT } from "./theme.js";
-import { FHIR_BASE, REST_BASE, IDLE_LOCK_MS, WIPE_CHECK_URL } from "./config.js";
+import { FHIR_BASE, REST_BASE, IDLE_LOCK_MS, WIPE_CHECK_URL, SYNC_TELEMETRY_URL } from "./config.js";
 import {
   OAUTH2_CLIENT_ID,
   exchangeCodeForToken,
@@ -108,7 +108,12 @@ export function App() {
 
   useEffect(() => {
     if (authHeader && lockStatus === "unlocked") {
-      initSyncWorker({ fhirBaseUrl: FHIR_BASE, authHeader });
+      initSyncWorker({
+        fhirBaseUrl: FHIR_BASE,
+        authHeader,
+        // exactOptionalPropertyTypes: omit the key entirely when unset.
+        ...(SYNC_TELEMETRY_URL ? { telemetryUrl: SYNC_TELEMETRY_URL } : {}),
+      });
       void pruneOldCaptures();
       void seedConcepts(REST_BASE, authHeader);
     }

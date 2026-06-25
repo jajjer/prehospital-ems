@@ -10,6 +10,13 @@ export const OPENMRS_BASE =
 export const FHIR_BASE = `${OPENMRS_BASE}/ws/fhir2/R4`;
 export const REST_BASE = `${OPENMRS_BASE}/ws/rest/v1`;
 
+// Fleet sync-health telemetry endpoint. Field devices POST PHI-free health
+// snapshots here; the dispatch console GETs the aggregated fleet from the same
+// URL to render the Fleet Health dashboard. When unset, the dashboard shows a
+// configuration hint instead. See README and issue #10.
+export const SYNC_TELEMETRY_URL =
+  import.meta.env.VITE_SYNC_TELEMETRY_URL as string | undefined;
+
 // RapidPro outbound SMS — all three must be set to enable the "Alert responders" button.
 export const RAPIDPRO_API_URL   = import.meta.env.VITE_RAPIDPRO_API_URL   as string | undefined;
 export const RAPIDPRO_TOKEN     = import.meta.env.VITE_RAPIDPRO_TOKEN     as string | undefined;

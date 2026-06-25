@@ -17,6 +17,9 @@ importers:
 
   apps/dispatch:
     dependencies:
+      '@prehospital-ems/sync-engine':
+        specifier: workspace:*
+        version: link:../../packages/sync-engine
       maplibre-gl:
         specifier: ^4.7.1
         version: 4.7.1
