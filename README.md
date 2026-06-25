@@ -49,6 +49,14 @@ Prehospital EMS in LMIC settings relies on paper capture because Android devices
 
 **OEM battery optimization note:** Budget Android OEMs (Tecno, Infinix, itel) aggressively kill Background Sync. The sync engine registers a `visibilitychange` listener as a fallback so the queue flushes when the paramedic returns to the app.
 
+## Patient handoff
+
+The core value is the receiving facility reading what the field team captured. From the **Records** tab, **Hand off patient** opens a clean, printable handoff summary for an encounter: demographics, chief complaint, the full vitals trend (serial sets), GCS with its E/V/M breakdown, interventions/treatments, and the expanded assessment. The sheet renders as a light "document" — `window.print()` isolates it, so it prints or saves to PDF without the dark app chrome.
+
+Each summary carries a **QR code** that deep-links to the FHIR `Encounter` (`{FHIR_BASE}/Encounter/{uuid}`), so the facility can scan straight to the record. The QR is generated entirely on-device (a vendored, dependency-free [Nayuki QR generator](https://www.nayuki.io/page/qr-code-generator-library) rendered to inline SVG) — no external service, which matters for an offline PHI-handling PWA. **Share** hands a plain-text summary (plus the link) to the OS share sheet or clipboard.
+
+**Confirm handoff** finalizes the encounter in OpenMRS — PATCHes status to `finished` and sets `period.end` — and records the local handoff time. It requires connectivity (a foreground, user-triggered action) and reports network/server errors inline. A finalized record stays viewable so the summary can be re-opened or re-printed at the facility.
+
 ## FHIR Resource Mapping
 
 | Clinical concept | FHIR resource | Notes |
