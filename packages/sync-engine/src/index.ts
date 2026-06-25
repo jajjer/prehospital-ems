@@ -6,7 +6,7 @@
  */
 export { db } from "./db.js";
 export type { WriteQueueItem, DeadLetterItem, IdentityMapEntry, CaptureLogEntry, ConceptCacheEntry, ConflictLogEntry } from "./db.js";
-export { initSyncWorker, flush, enqueue, finalizeEncounter } from "./syncWorker.js";
+export { initSyncWorker, flush, enqueue, finalizeEncounter, getServerEncounterId } from "./syncWorker.js";
 export type { SyncWorkerConfig, FinalizeResult } from "./syncWorker.js";
 export { backoffDelay, shouldDeadLetter, BACKOFF } from "./backoff.js";
 export { logCapture, getRecentCaptures, markCaptureComplete, getPendingCapture, getCaptureStatus, retryDeadLettered, pruneOldCaptures, addVitalsSet, vitalsSeries } from "./captureLog.js";

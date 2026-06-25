@@ -6,7 +6,7 @@
  */
 import { useState, useEffect } from "react";
 import {
-  getRecentCaptures, getCaptureStatus, retryDeadLettered, flush, finalizeEncounter,
+  getRecentCaptures, getCaptureStatus, retryDeadLettered, flush,
   addVitalsSet, vitalsSeries, enqueue, getConflictsForMrn, resolveConflict,
   type CaptureLogEntry, type CaptureStatus, type VitalsTimePoint,
   type ConflictLogEntry, type ConflictResolution,
@@ -15,8 +15,9 @@ import { buildVitalObservations, validateVitals, type VitalsInput, type Assessme
 import { C, FONT } from "./theme.js";
 import { VITALS, EMPTY_VITALS, VitalsGrid, type VitalMeta } from "./VitalsGrid.js";
 import { GCS_CONCEPT_UUID } from "./config.js";
+import { HandoffSummary } from "./HandoffSummary.js";
 
-interface EnrichedEntry extends CaptureLogEntry {
+export interface EnrichedEntry extends CaptureLogEntry {
   status: CaptureStatus;
   /** Most recent vitals reading — what the summary chips display. */
   vitals: VitalsInput;
@@ -128,8 +129,7 @@ function RecordCard({ record, onRetry, onChanged }: {
 }) {
   const [open, setOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [handingOff, setHandingOff] = useState(false);
-  const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [showHandoff, setShowHandoff] = useState(false);
   const [addingVitals, setAddingVitals] = useState(false);
   const time = new Date(record.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const date = new Date(record.capturedAt).toLocaleDateString([], { month: "short", day: "numeric" });
@@ -225,43 +225,22 @@ function RecordCard({ record, onRetry, onChanged }: {
         </div>
       )}
 
-      {/* Hand off — only for synced records that have an encounterId and haven't been handed off */}
+      {/* Hand off — opens the receiving-facility summary, where handoff is confirmed.
+          Shown for synced records with an encounterId that haven't been handed off. */}
       {record.status === "synced" && record.encounterId && !record.handoffAt && (
         <div style={{ marginTop: "0.625rem" }} onClick={(e) => e.stopPropagation()}>
-          {handoffError && (
-            <div style={{ color: C.danger, fontSize: "0.6875rem", marginBottom: "0.375rem" }}>
-              {handoffError}
-            </div>
-          )}
           <button
-            disabled={handingOff}
-            onClick={async () => {
-              setHandingOff(true);
-              setHandoffError(null);
-              const result = await finalizeEncounter(record.mrn);
-              if (result === "ok") {
-                onChanged();
-              } else if (result === "network-error") {
-                setHandoffError("No connection — try again when online.");
-              } else if (result === "server-error") {
-                setHandoffError("Server error — try again.");
-              } else {
-                setHandoffError("Encounter not yet synced.");
-              }
-              setHandingOff(false);
-            }}
+            onClick={() => setShowHandoff(true)}
             style={{
               width: "100%", padding: "0.4rem",
               background: "transparent",
               border: `1px solid ${C.primary}`,
               borderRadius: 6, color: C.primary,
               fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600,
-              cursor: handingOff ? "default" : "pointer",
-              opacity: handingOff ? 0.5 : 1,
-              transition: "opacity 0.1s",
+              cursor: "pointer",
             }}
           >
-            {handingOff ? "Handing off…" : "Hand off patient"}
+            Hand off patient
           </button>
         </div>
       )}
@@ -285,10 +264,23 @@ function RecordCard({ record, onRetry, onChanged }: {
         </div>
       )}
 
-      {/* Handed-off confirmation */}
+      {/* Handed-off confirmation + reopen the summary (e.g. to re-print at the facility) */}
       {record.handoffAt && (
-        <div style={{ marginTop: "0.625rem", fontSize: "0.6875rem", color: C.success }} onClick={(e) => e.stopPropagation()}>
-          Handed off at {new Date(record.handoffAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        <div style={{ marginTop: "0.625rem" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ fontSize: "0.6875rem", color: C.success, marginBottom: "0.4rem" }}>
+            Handed off at {new Date(record.handoffAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </div>
+          <button
+            onClick={() => setShowHandoff(true)}
+            style={{
+              width: "100%", padding: "0.4rem",
+              background: "transparent", border: `1px solid ${C.border}`,
+              borderRadius: 6, color: C.text,
+              fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            View handoff summary
+          </button>
         </div>
       )}
 
@@ -316,6 +308,17 @@ function RecordCard({ record, onRetry, onChanged }: {
           onClose={() => setAddingVitals(false)}
           onSaved={() => { setAddingVitals(false); onChanged(); }}
         />
+      )}
+
+      {/* Receiving-facility handoff summary */}
+      {showHandoff && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <HandoffSummary
+            record={record}
+            onClose={() => setShowHandoff(false)}
+            onChanged={onChanged}
+          />
+        </div>
       )}
     </div>
   );

@@ -388,6 +388,22 @@ async function resolveReferences(body: string): Promise<string> {
 export type FinalizeResult = "ok" | "not-synced" | "network-error" | "server-error";
 
 /**
+ * Resolves the MRN of a capture to its server-side FHIR Encounter UUID, or
+ * undefined if the encounter hasn't synced yet (still queued / never captured).
+ * Joined calls hold the server UUID directly; own captures resolve their
+ * provisional ENC id through the identity map once the upload completes. The
+ * handoff summary uses this to build the QR deep-link, and finalizeEncounter to
+ * target the PATCH — keeping the two on one source of truth.
+ */
+export async function getServerEncounterId(mrn: string): Promise<string | undefined> {
+  const captureEntry = await db.captureLog.get(mrn);
+  if (!captureEntry?.encounterId) return undefined;
+  return captureEntry.joined
+    ? captureEntry.encounterId
+    : (await db.identityMap.get(captureEntry.encounterId))?.serverUUID;
+}
+
+/**
  * PATCHes the FHIR Encounter for this MRN to status "finished" with a period.end timestamp.
  * Returns "not-synced" if the encounter hasn't been uploaded yet (no identity map entry).
  * Requires the app to be online — this is a foreground, user-triggered action.
@@ -396,13 +412,7 @@ export async function finalizeEncounter(mrn: string): Promise<FinalizeResult> {
   if (!config) return "not-synced";
   const { fhirBaseUrl, authHeader } = config;
 
-  const captureEntry = await db.captureLog.get(mrn);
-  if (!captureEntry?.encounterId) return "not-synced";
-
-  // Joined calls store the server UUID directly; others require an identityMap lookup.
-  const serverEncounterId = captureEntry.joined
-    ? captureEntry.encounterId
-    : (await db.identityMap.get(captureEntry.encounterId))?.serverUUID;
+  const serverEncounterId = await getServerEncounterId(mrn);
   if (!serverEncounterId) return "not-synced";
 
   const patches = [
