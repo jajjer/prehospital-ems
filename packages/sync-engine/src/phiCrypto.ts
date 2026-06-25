@@ -20,7 +20,7 @@ import type { CaptureLogEntry } from "./db.js";
  * Cleartext, by table:
  *  - writeQueue/deadLetter: everything except `body` (ids, indexes, timestamps).
  *  - captureLog: mrn, capturedAt, submissionStatus, encounterId, handoffAt,
- *    joined — identifiers/state used for indexing and reference resolution.
+ *    joined, patientRef — identifiers/state used for indexing and reference resolution.
  */
 
 /** captureLog columns holding patient data. Keep in sync with SECURITY.md. */
@@ -29,6 +29,7 @@ const CAPTURE_PHI_FIELDS = [
   "approximateAge",
   "complaint",
   "vitalsJson",
+  "repeatVitalsJson",
   "lat",
   "lng",
 ] as const satisfies readonly (keyof CaptureLogEntry)[];

@@ -9,8 +9,8 @@ export type { WriteQueueItem, DeadLetterItem, IdentityMapEntry, CaptureLogEntry,
 export { initSyncWorker, flush, enqueue, finalizeEncounter } from "./syncWorker.js";
 export type { SyncWorkerConfig, FinalizeResult } from "./syncWorker.js";
 export { backoffDelay, shouldDeadLetter, BACKOFF } from "./backoff.js";
-export { logCapture, getRecentCaptures, markCaptureComplete, getPendingCapture, getCaptureStatus, retryDeadLettered, pruneOldCaptures } from "./captureLog.js";
-export type { CaptureStatus } from "./captureLog.js";
+export { logCapture, getRecentCaptures, markCaptureComplete, getPendingCapture, getCaptureStatus, retryDeadLettered, pruneOldCaptures, addVitalsSet, vitalsSeries } from "./captureLog.js";
+export type { CaptureStatus, VitalsTimePoint } from "./captureLog.js";
 export { seedConcepts, getConceptByUUID, getConceptByCielId } from "./conceptCache.js";
 export { checkActiveCalls } from "./dedup.js";
 export type { ActiveCallSummary } from "./dedup.js";

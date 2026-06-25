@@ -26,6 +26,49 @@ export async function markCaptureComplete(mrn: string): Promise<void> {
   await db.captureLog.update(mrn, { submissionStatus: "complete" });
 }
 
+/** One timestamped vitals reading within an encounter's serial-vitals series. */
+export interface VitalsTimePoint {
+  capturedAt: number;
+  /** JSON.stringify(VitalsInput) — same encoding as CaptureLogEntry.vitalsJson. */
+  vitalsJson: string;
+}
+
+/**
+ * Appends a repeat vitals set to an existing capture (serial vitals over transport).
+ * The new reading is stored against the same encounter — callers are responsible for
+ * enqueuing the corresponding FHIR Observations. PHI is re-encrypted before the write.
+ * Throws if the capture no longer exists (e.g. pruned).
+ */
+export async function addVitalsSet(
+  mrn: string,
+  vitalsJson: string,
+  capturedAt: number,
+): Promise<void> {
+  const stored = await db.captureLog.get(mrn);
+  if (!stored) throw new Error(`addVitalsSet: no capture for mrn ${mrn}`);
+  const entry = await decryptCapture(stored);
+  const sets: VitalsTimePoint[] = entry.repeatVitalsJson
+    ? (JSON.parse(entry.repeatVitalsJson) as VitalsTimePoint[])
+    : [];
+  sets.push({ capturedAt, vitalsJson });
+  entry.repeatVitalsJson = JSON.stringify(sets);
+  await db.captureLog.put(await encryptCapture(entry));
+}
+
+/**
+ * Returns the full vitals series for a (decrypted) capture, oldest first: the initial
+ * set from `vitalsJson`/`capturedAt` followed by any repeat sets, sorted by time.
+ */
+export function vitalsSeries(entry: CaptureLogEntry): VitalsTimePoint[] {
+  const series: VitalsTimePoint[] = [{ capturedAt: entry.capturedAt, vitalsJson: entry.vitalsJson }];
+  if (entry.repeatVitalsJson) {
+    try {
+      series.push(...(JSON.parse(entry.repeatVitalsJson) as VitalsTimePoint[]));
+    } catch { /* corrupt repeat data — fall back to the initial set only */ }
+  }
+  return series.sort((a, b) => a.capturedAt - b.capturedAt);
+}
+
 /** Returns the first captureLog entry with submissionStatus "pending", if any. */
 export async function getPendingCapture(): Promise<CaptureLogEntry | undefined> {
   // submissionStatus is cleartext, so we can filter before decrypting.
