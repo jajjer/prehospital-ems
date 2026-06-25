@@ -26,7 +26,8 @@ enqueue, flush, dead-letter, capture log, retry — all pass through it.
 | ------------ | ----------------------------------------------------- | ---------------------------------------------------------------- |
 | `writeQueue` | `body` (the FHIR resource JSON)                       | `id`, `resourceType`, `resourceId`, `enqueuedAt`, indexes        |
 | `deadLetter` | `body`                                                 | ids, `statusCode`, `failedAt`, indexes                           |
-| `captureLog` | `sex`, `approximateAge`, `complaint`, `vitalsJson`, `repeatVitalsJson`, `interventionsJson`, `assessmentJson`, `lat`, `lng` | `mrn`, `capturedAt`, `submissionStatus`, `encounterId`, `handoffAt`, `joined`, `patientRef` |
+| `captureLog` | `sex`, `approximateAge`, `complaint`, `vitalsJson`, `repeatVitalsJson`, `interventionsJson`, `assessmentJson`, `lat`, `lng`, `reconciledName` | `mrn`, `capturedAt`, `submissionStatus`, `encounterId`, `handoffAt`, `joined`, `patientRef`, `reconciledPatientUUID`, `reconciledAt` |
+| `reconciliationLog` | `targetName` (confirmed patient name) | `mrn`, server UUIDs, `targetIdentifier`, `repointedCount`, `reconciledAt` |
 
 The cleartext columns are local provisional identifiers, timestamps, and sync
 state. They are indexed (so Dexie can query them) and are not, on their own,

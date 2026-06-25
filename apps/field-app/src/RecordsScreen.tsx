@@ -16,6 +16,7 @@ import { C, FONT } from "./theme.js";
 import { VITALS, EMPTY_VITALS, VitalsGrid, type VitalMeta } from "./VitalsGrid.js";
 import { GCS_CONCEPT_UUID } from "./config.js";
 import { HandoffSummary } from "./HandoffSummary.js";
+import { ReconcileModal } from "./ReconcileModal.js";
 
 export interface EnrichedEntry extends CaptureLogEntry {
   status: CaptureStatus;
@@ -58,7 +59,7 @@ async function submitRepeatVitals(record: EnrichedEntry, vitals: VitalsInput): P
   void flush();
 }
 
-export function RecordsScreen() {
+export function RecordsScreen({ authHeader }: { authHeader: string }) {
   const [records, setRecords] = useState<EnrichedEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -109,6 +110,7 @@ export function RecordsScreen() {
           <RecordCard
             key={r.mrn}
             record={r}
+            authHeader={authHeader}
             onRetry={async () => {
               await retryDeadLettered(r.mrn);
               void flush();
@@ -122,8 +124,9 @@ export function RecordsScreen() {
   );
 }
 
-function RecordCard({ record, onRetry, onChanged }: {
+function RecordCard({ record, authHeader, onRetry, onChanged }: {
   record: EnrichedEntry;
+  authHeader: string;
   onRetry: () => void;
   onChanged: () => void;
 }) {
@@ -131,6 +134,7 @@ function RecordCard({ record, onRetry, onChanged }: {
   const [retrying, setRetrying] = useState(false);
   const [showHandoff, setShowHandoff] = useState(false);
   const [addingVitals, setAddingVitals] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const time = new Date(record.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const date = new Date(record.capturedAt).toLocaleDateString([], { month: "short", day: "numeric" });
 
@@ -140,6 +144,10 @@ function RecordCard({ record, onRetry, onChanged }: {
     && (!record.joined || !!record.patientRef);
   const setCount = record.series.length;
   const hasConflict = record.conflicts.length > 0;
+  const reconciled = !!record.reconciledPatientUUID;
+  // Reconcile a still-provisional record once it has synced — joined calls already
+  // hold a confirmed patient, so they're excluded.
+  const canReconcile = record.status === "synced" && !reconciled && !record.joined;
 
   return (
     <div
@@ -163,6 +171,11 @@ function RecordCard({ record, onRetry, onChanged }: {
               {record.sex === "male" ? "M" : record.sex === "female" ? "F" : "U"}
               {record.approximateAge !== undefined ? ` · ${record.approximateAge}y` : ""}
             </span>
+            {reconciled && (
+              <div style={{ fontSize: "0.75rem", color: C.success, marginTop: "0.15rem", fontWeight: 600 }}>
+                ✓ {record.reconciledName}
+              </div>
+            )}
           </div>
         </div>
         <div style={{ textAlign: "right", fontSize: "0.75rem", color: C.muted, flexShrink: 0 }}>
@@ -264,6 +277,25 @@ function RecordCard({ record, onRetry, onChanged }: {
         </div>
       )}
 
+      {/* Reconcile identity — link this provisional record to a confirmed OpenMRS patient */}
+      {canReconcile && (
+        <div style={{ marginTop: "0.625rem" }} onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => setReconciling(true)}
+            style={{
+              width: "100%", padding: "0.4rem",
+              background: "transparent",
+              border: `1px solid ${C.border}`,
+              borderRadius: 6, color: C.text,
+              fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Reconcile identity
+          </button>
+        </div>
+      )}
+
       {/* Handed-off confirmation + reopen the summary (e.g. to re-print at the facility) */}
       {record.handoffAt && (
         <div style={{ marginTop: "0.625rem" }} onClick={(e) => e.stopPropagation()}>
@@ -317,6 +349,18 @@ function RecordCard({ record, onRetry, onChanged }: {
             record={record}
             onClose={() => setShowHandoff(false)}
             onChanged={onChanged}
+          />
+        </div>
+      )}
+
+      {/* Reconcile-to-confirmed-patient modal */}
+      {reconciling && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ReconcileModal
+            record={record}
+            authHeader={authHeader}
+            onClose={() => setReconciling(false)}
+            onReconciled={() => { setReconciling(false); onChanged(); }}
           />
         </div>
       )}

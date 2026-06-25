@@ -67,6 +67,33 @@ export interface IdentityMapEntry {
   resolvedAt: number;
 }
 
+/**
+ * Audit record of a patient reconciliation: a provisional ("Unknown Patient")
+ * record linked to a confirmed OpenMRS patient via the MPI. The provisional
+ * identifier is preserved as the primary key for traceability — we never lose
+ * the link from field capture to confirmed identity. Surfaced in the Records /
+ * handoff views so the crew can see the confirmed name.
+ */
+export interface ReconciliationLogEntry {
+  /** Provisional MRN that was reconciled — primary key, links to a captureLog row. */
+  mrn: string;
+  /** Server UUID of the orphaned provisional Patient, if it had already synced.
+   *  Absent when reconciled before the provisional Patient ever reached the server. */
+  provisionalPatientUUID: string | undefined;
+  /** Confirmed OpenMRS patient UUID this record was linked to. */
+  targetPatientUUID: string;
+  /** Confirmed patient display name at reconciliation time. PHI — encrypted at rest. */
+  targetName: string;
+  /** Confirmed patient's official identifier (real MRN), for display. */
+  targetIdentifier: string | undefined;
+  /** Server Encounter UUID that was re-pointed to the confirmed patient, if synced. */
+  encounterId: string | undefined;
+  /** Count of dependent resources (Observation/Condition/…) re-pointed server-side. */
+  repointedCount: number;
+  /** When the reconciliation was performed (Unix ms). */
+  reconciledAt: number;
+}
+
 export interface ConceptCacheEntry {
   /** OpenMRS concept UUID — primary key */
   uuid: string;
@@ -123,6 +150,14 @@ export interface CaptureLogEntry {
    *  mechanism of injury, narrative). The corresponding FHIR Observation/Condition
    *  resources are enqueued separately. PHI — encrypted at rest. */
   assessmentJson?: string;
+  /** Confirmed OpenMRS patient UUID once this record has been reconciled to a real
+   *  identity via the MPI. Absent until reconciliation. */
+  reconciledPatientUUID?: string;
+  /** Confirmed patient display name, shown in Records/handoff after reconciliation.
+   *  PHI — encrypted at rest. */
+  reconciledName?: string;
+  /** When this record was reconciled to a confirmed patient (Unix ms). */
+  reconciledAt?: number;
 }
 
 export const SYNC_DB_NAME = "prehospital-ems-sync";
@@ -134,6 +169,7 @@ export class SyncDatabase extends Dexie {
   captureLog!: Table<CaptureLogEntry, string>;
   concepts!: Table<ConceptCacheEntry, string>;
   conflictLog!: Table<ConflictLogEntry, string>;
+  reconciliationLog!: Table<ReconciliationLogEntry, string>;
 
   constructor() {
     super(SYNC_DB_NAME);
@@ -185,6 +221,18 @@ export class SyncDatabase extends Dexie {
       captureLog: "mrn, capturedAt",
       concepts: "uuid, cielId",
       conflictLog: "id, resourceType, mrn, resolution, detectedAt",
+    });
+
+    // v6: add reconciliationLog — provisional records linked to confirmed MPI
+    // identities. Indexed by mrn (Records-screen lookup) and reconciledAt.
+    this.version(6).stores({
+      writeQueue: "id, resourceType, resourceId, enqueuedAt, retryCount, [patientId], [encounterId]",
+      deadLetter: "id, resourceType, resourceId, patientId, encounterId, failedAt",
+      identityMap: "provisionalId, serverUUID, resourceType",
+      captureLog: "mrn, capturedAt",
+      concepts: "uuid, cielId",
+      conflictLog: "id, resourceType, mrn, resolution, detectedAt",
+      reconciliationLog: "mrn, reconciledAt",
     });
   }
 }
