@@ -5,13 +5,53 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { useState, useEffect } from "react";
-import { getRecentCaptures, getCaptureStatus, retryDeadLettered, flush, finalizeEncounter, type CaptureLogEntry, type CaptureStatus } from "@prehospital-ems/sync-engine";
+import {
+  getRecentCaptures, getCaptureStatus, retryDeadLettered, flush, finalizeEncounter,
+  addVitalsSet, vitalsSeries, enqueue,
+  type CaptureLogEntry, type CaptureStatus, type VitalsTimePoint,
+} from "@prehospital-ems/sync-engine";
+import { buildVitalObservations, validateVitals, type VitalsInput } from "@prehospital-ems/fhir-contracts";
 import { C, FONT } from "./theme.js";
-import type { VitalsInput } from "@prehospital-ems/fhir-contracts";
+import { VITALS, EMPTY_VITALS, VitalsGrid, type VitalMeta } from "./VitalsGrid.js";
+import { GCS_CONCEPT_UUID } from "./config.js";
 
 interface EnrichedEntry extends CaptureLogEntry {
   status: CaptureStatus;
+  /** Most recent vitals reading — what the summary chips display. */
   vitals: VitalsInput;
+  /** Full timestamped series (initial + repeats), oldest first. */
+  series: VitalsTimePoint[];
+}
+
+/**
+ * Enqueues a repeat vitals set against an existing encounter and records it locally.
+ * Reuses the current Patient/Encounter — no new resources are created. Works offline:
+ * the Observations reference the provisional ids and resolve via the identity map on flush.
+ */
+async function submitRepeatVitals(record: EnrichedEntry, vitals: VitalsInput): Promise<void> {
+  const capturedAt = Date.now();
+  const encounterRef = record.encounterId;
+  if (!encounterRef) throw new Error("repeat vitals: capture has no encounter");
+  // Joined calls hold the server Patient UUID; own captures use the provisional mrn,
+  // which the sync worker resolves to the server UUID via the identity map.
+  const patientRef = record.joined ? record.patientRef : record.mrn;
+  if (!patientRef) throw new Error("repeat vitals: capture has no patient reference");
+
+  const observations = buildVitalObservations(vitals, {
+    patientServerUUID: patientRef,
+    encounterServerUUID: encounterRef,
+    effectiveTime: new Date(capturedAt).toISOString(),
+    gcsConceptUUID: GCS_CONCEPT_UUID,
+  });
+  for (const obs of observations) {
+    await enqueue({
+      id: crypto.randomUUID(), resourceType: "Observation",
+      resourceId: crypto.randomUUID(), body: JSON.stringify(obs),
+      patientId: record.mrn, encounterId: encounterRef,
+    });
+  }
+  await addVitalsSet(record.mrn, JSON.stringify(vitals), capturedAt);
+  void flush();
 }
 
 export function RecordsScreen() {
@@ -21,11 +61,16 @@ export function RecordsScreen() {
   async function load() {
     const entries = await getRecentCaptures(50);
     const enriched = await Promise.all(
-      entries.map(async (e) => ({
-        ...e,
-        status: await getCaptureStatus(e.mrn),
-        vitals: JSON.parse(e.vitalsJson) as VitalsInput,
-      }))
+      entries.map(async (e) => {
+        const series = vitalsSeries(e);
+        const latest = series[series.length - 1]!; // always ≥1 (the initial set)
+        return {
+          ...e,
+          status: await getCaptureStatus(e.mrn),
+          vitals: JSON.parse(latest.vitalsJson) as VitalsInput,
+          series,
+        };
+      })
     );
     setRecords(enriched);
     setLoading(false);
@@ -64,7 +109,7 @@ export function RecordsScreen() {
               void flush();
               await load();
             }}
-            onHandoffSuccess={() => void load()}
+            onChanged={() => void load()}
           />
         ))}
       </div>
@@ -72,17 +117,24 @@ export function RecordsScreen() {
   );
 }
 
-function RecordCard({ record, onRetry, onHandoffSuccess }: {
+function RecordCard({ record, onRetry, onChanged }: {
   record: EnrichedEntry;
   onRetry: () => void;
-  onHandoffSuccess: () => void;
+  onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [handingOff, setHandingOff] = useState(false);
   const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [addingVitals, setAddingVitals] = useState(false);
   const time = new Date(record.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const date = new Date(record.capturedAt).toLocaleDateString([], { month: "short", day: "numeric" });
+
+  // Repeat vitals reuse the existing encounter. Allowed until handoff, and only when we
+  // have a patient reference (own captures always do; joined captures need patientRef).
+  const canAddVitals = !!record.encounterId && !record.handoffAt
+    && (!record.joined || !!record.patientRef);
+  const setCount = record.series.length;
 
   return (
     <div
@@ -114,14 +166,23 @@ function RecordCard({ record, onRetry, onHandoffSuccess }: {
         </div>
       </div>
 
-      {/* Vitals summary row */}
-      <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+      {/* Vitals summary row — shows the most recent reading */}
+      <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem", flexWrap: "wrap", alignItems: "baseline" }}>
         <VitalChip label="HR" value={record.vitals.hr} unit="bpm" low={60} high={100} />
         <VitalChip label="BP" value={record.vitals.bpSystolic === 0 && record.vitals.bpDiastolic === 0 ? 0 : `${record.vitals.bpSystolic}/${record.vitals.bpDiastolic}`} unit="mmHg" />
         <VitalChip label="RR" value={record.vitals.rr} unit="/min" low={12} high={20} />
         {record.vitals.temp > 0 && <VitalChip label="T" value={record.vitals.temp} unit="°C" low={36.1} high={37.5} />}
         <VitalChip label="SpO₂" value={record.vitals.spo2} unit="%" low={95} high={100} />
         <VitalChip label="GCS" value={record.vitals.gcs} unit="" low={13} high={15} />
+        {setCount > 1 && (
+          <span style={{
+            fontSize: "0.625rem", fontWeight: 700, color: C.primary,
+            background: "#162032", border: `1px solid ${C.border}`,
+            borderRadius: 999, padding: "0.05rem 0.4rem", letterSpacing: "0.03em",
+          }}>
+            {setCount} SETS · LATEST
+          </span>
+        )}
       </div>
 
       {/* Retry button — only shown for failed captures */}
@@ -165,7 +226,7 @@ function RecordCard({ record, onRetry, onHandoffSuccess }: {
               setHandoffError(null);
               const result = await finalizeEncounter(record.mrn);
               if (result === "ok") {
-                onHandoffSuccess();
+                onChanged();
               } else if (result === "network-error") {
                 setHandoffError("No connection — try again when online.");
               } else if (result === "server-error") {
@@ -191,6 +252,25 @@ function RecordCard({ record, onRetry, onHandoffSuccess }: {
         </div>
       )}
 
+      {/* Add vitals — repeat/serial vitals against the same encounter, until handoff */}
+      {canAddVitals && (
+        <div style={{ marginTop: "0.625rem" }} onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => setAddingVitals(true)}
+            style={{
+              width: "100%", padding: "0.4rem",
+              background: "transparent",
+              border: `1px solid ${C.border}`,
+              borderRadius: 6, color: C.text,
+              fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            + Add vitals set
+          </button>
+        </div>
+      )}
+
       {/* Handed-off confirmation */}
       {record.handoffAt && (
         <div style={{ marginTop: "0.625rem", fontSize: "0.6875rem", color: C.success }} onClick={(e) => e.stopPropagation()}>
@@ -201,7 +281,8 @@ function RecordCard({ record, onRetry, onHandoffSuccess }: {
       {/* Expanded detail */}
       {open && (
         <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: `1px solid ${C.border}`, fontSize: "0.75rem", color: C.muted }}>
-          <div>MRN: <span style={{ color: C.text, fontFamily: "monospace" }}>{record.mrn}</span></div>
+          {setCount > 1 && <VitalsTrend series={record.series} />}
+          <div style={{ marginTop: setCount > 1 ? "0.75rem" : 0 }}>MRN: <span style={{ color: C.text, fontFamily: "monospace" }}>{record.mrn}</span></div>
           <div style={{ marginTop: "0.25rem" }}>
             Status: <StatusLabel status={record.status} />
           </div>
@@ -212,6 +293,160 @@ function RecordCard({ record, onRetry, onHandoffSuccess }: {
           )}
         </div>
       )}
+
+      {/* Add-vitals modal */}
+      {addingVitals && (
+        <AddVitalsModal
+          record={record}
+          onClose={() => setAddingVitals(false)}
+          onSaved={() => { setAddingVitals(false); onChanged(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Flowsheet of vitals over time for one encounter — oldest at top, latest at bottom.
+ * Out-of-range values render in the danger colour, mirroring the capture form.
+ */
+function VitalsTrend({ series }: { series: VitalsTimePoint[] }) {
+  const rows = series.map((p) => ({
+    capturedAt: p.capturedAt,
+    v: JSON.parse(p.vitalsJson) as VitalsInput,
+  }));
+  const metaOf = (key: keyof VitalsInput): VitalMeta => VITALS.find((m) => m.key === key)!;
+  const cols: Array<{ label: string; render: (v: VitalsInput) => React.ReactNode; meta?: VitalMeta }> = [
+    { label: "HR",   render: (v) => v.hr || "—",   meta: metaOf("hr") },
+    { label: "BP",   render: (v) => (v.bpSystolic === 0 && v.bpDiastolic === 0 ? "—" : `${v.bpSystolic}/${v.bpDiastolic}`) },
+    { label: "RR",   render: (v) => v.rr || "—",   meta: metaOf("rr") },
+    { label: "SpO₂", render: (v) => v.spo2 || "—", meta: metaOf("spo2") },
+    { label: "Temp", render: (v) => (v.temp > 0 ? v.temp : "—"), meta: metaOf("temp") },
+    { label: "GCS",  render: (v) => v.gcs || "—",  meta: metaOf("gcs") },
+  ];
+  const th: React.CSSProperties = { textAlign: "right", padding: "0.2rem 0.4rem", color: C.muted, fontWeight: 600 };
+  const td: React.CSSProperties = { textAlign: "right", padding: "0.2rem 0.4rem", fontVariantNumeric: "tabular-nums" };
+  return (
+    <div>
+      <div style={{ fontSize: "0.625rem", fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.4rem" }}>
+        Vitals trend
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: "0.6875rem", width: "100%" }}>
+          <thead>
+            <tr>
+              <th style={{ ...th, textAlign: "left" }}>Time</th>
+              {cols.map((c) => <th key={c.label} style={th}>{c.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.capturedAt} style={{ borderTop: i === 0 ? "none" : `1px solid ${C.border}` }}>
+                <td style={{ ...td, textAlign: "left", color: C.text }}>
+                  {new Date(r.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </td>
+                {cols.map((c) => {
+                  const numeric = c.meta ? (r.v[c.meta.key]) : undefined;
+                  const abnormal = c.meta && numeric !== 0 && numeric !== undefined
+                    && (numeric < c.meta.low || numeric > c.meta.high);
+                  return (
+                    <td key={c.label} style={{ ...td, color: abnormal ? C.danger : C.text, fontWeight: abnormal ? 700 : 400 }}>
+                      {c.render(r.v)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AddVitalsModal({ record, onClose, onSaved }: {
+  record: EnrichedEntry;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [vitals, setVitals] = useState<VitalsInput>(EMPTY_VITALS);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    const errs = validateVitals(vitals).map((e) => e.message);
+    if (errs.length > 0) { setErrors(errs); return; }
+    setErrors([]);
+    setSaving(true);
+    try {
+      await submitRepeatVitals(record, vitals);
+      onSaved();
+    } catch {
+      setErrors(["Could not save vitals. Try again."]);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 200, padding: "1rem", fontFamily: FONT,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.surface, border: `1px solid ${C.border}`,
+          borderRadius: 12, padding: "1.25rem", width: "100%", maxWidth: 420,
+          maxHeight: "90dvh", overflowY: "auto",
+        }}
+      >
+        <p style={{ fontWeight: 700, fontSize: "0.9375rem", marginBottom: "0.25rem", color: C.text }}>
+          Add vitals set
+        </p>
+        <p style={{ color: C.muted, fontSize: "0.8125rem", marginBottom: "1rem" }}>
+          New timestamped reading for {record.complaint || "this patient"} — same encounter, no new record.
+        </p>
+
+        <VitalsGrid vitals={vitals} onChange={setVitals} />
+
+        {errors.length > 0 && (
+          <div style={{ background: C.dangerBg, border: `1px solid ${C.danger}`, borderRadius: 8, padding: "0.625rem 0.875rem", marginTop: "0.875rem" }}>
+            {errors.map((e) => (
+              <div key={e} style={{ color: C.danger, fontSize: "0.8125rem" }}>• {e}</div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: "0.625rem", marginTop: "1rem" }}>
+          <button
+            onClick={onClose}
+            style={{
+              flex: 1, padding: "0.75rem", background: "transparent",
+              border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted,
+              fontFamily: FONT, fontSize: "0.875rem", fontWeight: 500, cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void handleSave()}
+            disabled={saving}
+            style={{
+              flex: 2, padding: "0.75rem",
+              background: saving ? C.border : C.primary, color: "#fff",
+              border: "none", borderRadius: 8,
+              fontFamily: FONT, fontSize: "0.9375rem", fontWeight: 700,
+              cursor: saving ? "default" : "pointer",
+            }}
+          >
+            {saving ? "Saving…" : "Save & Queue"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

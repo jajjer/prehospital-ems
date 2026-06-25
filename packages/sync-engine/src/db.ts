@@ -71,6 +71,15 @@ export interface CaptureLogEntry {
   /** True when this device joined an existing call rather than creating a new patient.
    *  The encounterId field holds the server encounter UUID directly — no identityMap lookup. */
   joined?: boolean;
+  /** Patient reference used as the Observation `subject` for repeat vitals sets.
+   *  For joined calls this is the server Patient UUID (the local mrn is never enqueued);
+   *  absent for own captures, where the provisional mrn resolves via the identity map. */
+  patientRef?: string;
+  /** JSON-encoded array of additional timestamped vitals sets captured against this same
+   *  encounter after the initial submission (serial/repeat vitals over transport).
+   *  Shape: Array<{ capturedAt: number; vitalsJson: string }>. The initial set lives in
+   *  `vitalsJson`/`capturedAt`; this holds every re-take. PHI — encrypted at rest. */
+  repeatVitalsJson?: string;
 }
 
 export const SYNC_DB_NAME = "prehospital-ems-sync";
