@@ -8,12 +8,18 @@ import { db, type WriteQueueItem } from "./db.js";
 import { backoffDelay, shouldDeadLetter, BACKOFF } from "./backoff.js";
 import { encryptBody, decryptBody } from "./phiCrypto.js";
 import { recordConflict } from "./conflictLog.js";
+import { recordSyncSuccess, collectSyncHealth, reportSyncHealth } from "./syncTelemetry.js";
+import { getDeviceId } from "./appLock.js";
 
 export interface SyncWorkerConfig {
   /** Base URL for the fhir2 endpoint, e.g. http://localhost:8069/openmrs/ws/fhir2/R4 */
   fhirBaseUrl: string;
   /** Basic auth header value, e.g. "Basic YWRtaW46QWRtaW4xMjM=" */
   authHeader: string;
+  /** Optional fleet sync-health telemetry endpoint. When set, a PHI-free health
+   *  snapshot is POSTed after every flush so ops can see this device's sync state.
+   *  Unset → telemetry is disabled (safe default, no backend required). */
+  telemetryUrl?: string;
 }
 
 let config: SyncWorkerConfig | null = null;
@@ -111,6 +117,29 @@ export async function flush(): Promise<void> {
   } finally {
     flushing = false;
   }
+
+  // Publish a PHI-free health snapshot after the queue settles (best-effort).
+  await reportTelemetry();
+}
+
+let deviceIdPromise: Promise<string> | null = null;
+function cachedDeviceId(): Promise<string> {
+  if (!deviceIdPromise) deviceIdPromise = getDeviceId();
+  return deviceIdPromise;
+}
+
+/** Emit a fleet sync-health snapshot if a telemetry endpoint is configured.
+ *  Never throws — telemetry must not disrupt the sync path. */
+async function reportTelemetry(): Promise<void> {
+  const telemetryUrl = config?.telemetryUrl;
+  if (!telemetryUrl) return;
+  try {
+    const deviceId = await cachedDeviceId();
+    const snapshot = await collectSyncHealth({ deviceId });
+    await reportSyncHealth({ url: telemetryUrl, snapshot, authHeader: config!.authHeader });
+  } catch {
+    /* best-effort */
+  }
 }
 
 async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
@@ -152,6 +181,7 @@ async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
           });
         }
         await db.writeQueue.delete(item.id);
+        recordSyncSuccess();
         return;
       }
     }
@@ -215,6 +245,7 @@ async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
     // Patient block above): a successful create here means no server copy pre-existed,
     // so there is nothing to conflict with.
     await db.writeQueue.delete(item.id);
+    recordSyncSuccess();
     return;
   }
 

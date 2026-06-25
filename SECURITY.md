@@ -130,6 +130,18 @@ usable key material from an authenticator requires the WebAuthn PRF extension,
 whose support on the target budget devices is still uneven. The PIN is the
 portable, fully-offline baseline; biometrics can layer on later.
 
+## Fleet sync telemetry
+
+When `VITE_SYNC_TELEMETRY_URL` is configured, each device POSTs a sync-health
+snapshot after every flush so operations can see stuck devices (see
+`syncTelemetry.ts`). The snapshot egresses **only non-PHI**: the opaque
+`deviceId`, queue/dead-letter/conflict **counts**, and **timestamps** (oldest
+queued, oldest dead-lettered, last sync, reported-at). It never carries an MRN,
+a FHIR resource body, or any patient content — the dead-lettered bodies that
+caused a failure stay encrypted on the device. Reporting is **best-effort**: a
+network error or non-OK response is swallowed and never disrupts the sync path.
+The endpoint is optional; when unset, no telemetry leaves the device.
+
 ## Auth token storage
 
 Access tokens, the OAuth2 refresh token, and the Basic-auth header used to live

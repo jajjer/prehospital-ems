@@ -33,3 +33,11 @@ export const IDLE_LOCK_MS =
 // deployments without the admin backend). See SECURITY.md.
 export const WIPE_CHECK_URL =
   import.meta.env.VITE_WIPE_CHECK_URL as string | undefined;
+
+// Fleet sync-health telemetry: optional endpoint that collects a PHI-free health
+// snapshot (queue depth, last-sync time, dead-letter count) POSTed after each
+// flush. The dispatch console reads the same endpoint to render its fleet
+// dashboard. When unset, telemetry is disabled (safe default, no backend
+// required). See README and issue #10.
+export const SYNC_TELEMETRY_URL =
+  import.meta.env.VITE_SYNC_TELEMETRY_URL as string | undefined;

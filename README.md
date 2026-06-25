@@ -86,8 +86,31 @@ All configuration is via Vite environment variables (prefix `VITE_`). Set them i
 | `VITE_GCS_CONCEPT_UUID` | `8a7ff9be-79af-4485-9499-094597f01335` | UUID of the GCS Total concept. The default was created manually in the reference instance. If you load the full CIEL dictionary, use the CIEL 162643 UUID from your instance. |
 | `VITE_IDLE_LOCK_MINUTES` | `5` | Minutes of inactivity before the app re-locks and requires the PIN again. The offline queue is never dropped on lock. See [SECURITY.md](SECURITY.md#app-lock-session-timeout--remote-wipe). |
 | `VITE_WIPE_CHECK_URL` | _(unset)_ | Optional admin endpoint for remote wipe. The app GETs it with a `deviceId` query param; a `{ "wipe": true }` response erases all local data. When unset, remote wipe is disabled. |
+| `VITE_SYNC_TELEMETRY_URL` | _(unset)_ | Optional fleet sync-health endpoint. The field app POSTs a PHI-free health snapshot after each flush; the dispatch console GETs the aggregated fleet to render the **Fleet health** dashboard. When unset, telemetry is disabled and the dashboard shows a configuration hint. See [Fleet sync health](#fleet-sync-health). |
 
 In production, `VITE_OPENMRS_BASE_URL` must point to an HTTPS endpoint. The field app uses Basic auth over HTTPS; OAuth2/OIDC is a milestone 2 target.
+
+### Fleet sync health
+
+A dead-lettered record fails silently on one paramedic's phone, and a device sitting on un-synced records for days is invisible to operations. When `VITE_SYNC_TELEMETRY_URL` is set, each field device publishes its sync health and the dispatch **Fleet health** tab surfaces stuck devices with alert thresholds.
+
+**Snapshot contract (PHI-free — counts and metadata only, never patient content):**
+
+```jsonc
+// Field app → POST {VITE_SYNC_TELEMETRY_URL}
+{
+  "deviceId": "…",              // opaque per-device id, no PHI
+  "queueDepth": 3,              // items waiting in the write queue
+  "deadLetterCount": 0,         // permanently failed (4xx) items
+  "unresolvedConflictCount": 0, // conflicts awaiting human review
+  "oldestQueuedAt": 1700000000000,   // Unix ms, or null
+  "oldestDeadLetterAt": null,        // Unix ms, or null
+  "lastSyncAt": 1700000000000,       // Unix ms, or null if never synced
+  "reportedAt": 1700000000000        // when the snapshot was taken
+}
+```
+
+The collector (deployment-provided, like the remote-wipe backend) keeps the latest snapshot per device and returns them on `GET` as a bare array or `{ "devices": [...] }`. The dispatch dashboard flags a device as **Alert** when it has dead-lettered records, when its oldest unsynced record exceeds one hour, or when it stops checking in while holding pending work; **Warning** when a record has aged past 15 minutes or a conflict is unresolved.
 
 ## Dev Setup
 

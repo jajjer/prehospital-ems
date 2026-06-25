@@ -13,6 +13,21 @@ export { logCapture, getRecentCaptures, markCaptureComplete, getPendingCapture, 
 export type { CaptureStatus, VitalsTimePoint } from "./captureLog.js";
 export { recordConflict, getUnresolvedConflicts, getUnresolvedConflictCount, getConflictsForMrn, resolveConflict } from "./conflictLog.js";
 export type { ConflictResolution, ConflictInput } from "./conflictLog.js";
+export {
+  evaluateSyncHealth,
+  collectSyncHealth,
+  reportSyncHealth,
+  recordSyncSuccess,
+  getLastSyncAt,
+  DEFAULT_SYNC_THRESHOLDS,
+} from "./syncTelemetry.js";
+export type {
+  SyncHealthSnapshot,
+  SyncSeverity,
+  SyncHealthThresholds,
+  SyncHealthEvaluation,
+  ReportSyncHealthOptions,
+} from "./syncTelemetry.js";
 export { seedConcepts, getConceptByUUID, getConceptByCielId } from "./conceptCache.js";
 export { checkActiveCalls } from "./dedup.js";
 export type { ActiveCallSummary } from "./dedup.js";
