@@ -259,13 +259,76 @@ async function searchPatientByIdentifier(
   }
 }
 
-async function resolveReferences(body: string): Promise<string> {
-  const allEntries = await db.identityMap.toArray();
-  let resolved = body;
-  for (const entry of allEntries) {
-    resolved = resolved.replaceAll(entry.provisionalId, entry.serverUUID);
+/** A FHIR reference field whose value we may need to rewrite, captured during
+ *  the resource walk so we can resolve all ids with a single keyed lookup. */
+interface RefSite {
+  /** The object holding the `reference` property, mutated in place. */
+  obj: { reference: string };
+  /** Resource type segment of "Type/id" — preserved on rewrite. */
+  type: string;
+  /** Id segment — looked up against the identity map (its primary key). */
+  id: string;
+}
+
+/** Collect every `{ reference: "Type/id" }` node in a parsed FHIR resource. */
+function collectReferenceSites(node: unknown, sites: RefSite[]): void {
+  if (Array.isArray(node)) {
+    for (const child of node) collectReferenceSites(child, sites);
+    return;
   }
-  return resolved;
+  if (node === null || typeof node !== "object") return;
+
+  const obj = node as Record<string, unknown>;
+  const ref = obj.reference;
+  if (typeof ref === "string") {
+    // Only relative references of the form "ResourceType/id" carry provisional
+    // ids; absolute URLs and contained "#id" references are left untouched.
+    const slash = ref.indexOf("/");
+    if (slash > 0 && slash < ref.length - 1 && !ref.includes("://")) {
+      sites.push({
+        obj: obj as { reference: string },
+        type: ref.slice(0, slash),
+        id: ref.slice(slash + 1),
+      });
+    }
+  }
+  for (const value of Object.values(obj)) collectReferenceSites(value, sites);
+}
+
+/**
+ * Rewrite provisional ids in a resource's reference fields to their server
+ * UUIDs. Parses the FHIR JSON and rewrites only the id segment of each
+ * `reference` field via a keyed lookup against the identity map — never a blind
+ * `String.replaceAll` over the whole body, which was O(n×m) and could corrupt a
+ * value that happened to contain a provisional id as a substring.
+ */
+async function resolveReferences(body: string): Promise<string> {
+  const resource = JSON.parse(body) as unknown;
+
+  const sites: RefSite[] = [];
+  collectReferenceSites(resource, sites);
+  if (sites.length === 0) return body;
+
+  // One keyed lookup per distinct id (primary key = provisionalId), instead of
+  // scanning the whole identity map for every resource.
+  const ids = [...new Set(sites.map((s) => s.id))];
+  const entries = await db.identityMap.bulkGet(ids);
+  const serverById = new Map<string, string>();
+  ids.forEach((id, i) => {
+    const entry = entries[i];
+    if (entry) serverById.set(id, entry.serverUUID);
+  });
+
+  let rewrote = false;
+  for (const site of sites) {
+    const serverUUID = serverById.get(site.id);
+    if (serverUUID !== undefined) {
+      site.obj.reference = `${site.type}/${serverUUID}`;
+      rewrote = true;
+    }
+  }
+
+  return rewrote ? JSON.stringify(resource) : body;
 }
 
 export type FinalizeResult = "ok" | "not-synced" | "network-error" | "server-error";
