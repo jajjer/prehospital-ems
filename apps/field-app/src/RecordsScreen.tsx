@@ -10,7 +10,7 @@ import {
   addVitalsSet, vitalsSeries, enqueue,
   type CaptureLogEntry, type CaptureStatus, type VitalsTimePoint,
 } from "@prehospital-ems/sync-engine";
-import { buildVitalObservations, validateVitals, type VitalsInput } from "@prehospital-ems/fhir-contracts";
+import { buildVitalObservations, validateVitals, type VitalsInput, type AssessmentInput } from "@prehospital-ems/fhir-contracts";
 import { C, FONT } from "./theme.js";
 import { VITALS, EMPTY_VITALS, VitalsGrid, type VitalMeta } from "./VitalsGrid.js";
 import { GCS_CONCEPT_UUID } from "./config.js";
@@ -291,6 +291,7 @@ function RecordCard({ record, onRetry, onChanged }: {
               Type: <span style={{ color: C.primary }}>Joined existing call</span>
             </div>
           )}
+          <AssessmentDetail vitals={record.vitals} assessmentJson={record.assessmentJson} />
         </div>
       )}
 
@@ -359,6 +360,54 @@ function VitalsTrend({ series }: { series: VitalsTimePoint[] }) {
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Read-only summary of the expanded assessment captured with a record: the GCS
+ * E/V/M breakdown (from the latest vitals) plus the stored assessment fields.
+ * Renders nothing when no breakdown and no assessment were captured.
+ */
+function AssessmentDetail({ vitals, assessmentJson }: {
+  vitals: VitalsInput;
+  assessmentJson: string | undefined;
+}) {
+  let a: AssessmentInput | undefined;
+  if (assessmentJson) {
+    try { a = JSON.parse(assessmentJson) as AssessmentInput; } catch { a = undefined; }
+  }
+  const hasGcsBreakdown = vitals.gcsEye !== undefined && vitals.gcsVerbal !== undefined && vitals.gcsMotor !== undefined;
+
+  const rows: Array<[string, string]> = [];
+  if (hasGcsBreakdown) rows.push(["GCS", `${vitals.gcs} (E${vitals.gcsEye} V${vitals.gcsVerbal} M${vitals.gcsMotor})`]);
+  if (a?.avpu) rows.push(["AVPU", a.avpu]);
+  if (a?.painScore !== undefined) rows.push(["Pain", `${a.painScore}/10`]);
+  if (a?.bloodGlucose !== undefined) rows.push(["Glucose", `${a.bloodGlucose} mg/dL`]);
+  const pupil = (e?: { size?: number; reactivity?: string }) =>
+    e ? [e.size !== undefined ? `${e.size}mm` : null, e.reactivity].filter(Boolean).join(" ") : "";
+  if (a?.pupilLeft || a?.pupilRight) rows.push(["Pupils", `L ${pupil(a.pupilLeft) || "—"} / R ${pupil(a.pupilRight) || "—"}`]);
+  if (a?.mechanismOfInjury) rows.push(["MOI", a.mechanismOfInjury]);
+  if (a?.allergies) rows.push(["Allergies", a.allergies]);
+  if (a?.medications) rows.push(["Meds", a.medications]);
+  if (a?.pastHistory) rows.push(["PMH", a.pastHistory]);
+  if (a?.narrative) rows.push(["Narrative", a.narrative]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: "0.625rem", paddingTop: "0.625rem", borderTop: `1px solid ${C.border}` }}>
+      <div style={{ fontSize: "0.625rem", fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.4rem" }}>
+        Assessment
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+        {rows.map(([label, val]) => (
+          <div key={label} style={{ display: "flex", gap: "0.5rem" }}>
+            <span style={{ color: C.muted, flexShrink: 0, minWidth: "4rem" }}>{label}</span>
+            <span style={{ color: C.text }}>{val}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

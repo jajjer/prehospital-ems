@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { validateVitals, assertValidVitals } from "../validators/vitals.js";
-import { buildVitalObservations } from "../builders/observation.js";
+import { buildVitalObservations, gcsTotalFromComponents } from "../builders/observation.js";
 
 const VALID_VITALS = { hr: 80, rr: 16, bpSystolic: 120, bpDiastolic: 80, temp: 37.0, spo2: 98, gcs: 15 };
 
@@ -70,6 +70,43 @@ describe("validateVitals", () => {
   });
 });
 
+describe("validateVitals — GCS components", () => {
+  const withGcs = { ...VALID_VITALS, gcs: 15, gcsEye: 4, gcsVerbal: 5, gcsMotor: 6 };
+
+  it("accepts a consistent E/V/M breakdown", () => {
+    expect(validateVitals(withGcs)).toHaveLength(0);
+  });
+
+  it("rejects a total that does not match the components", () => {
+    const errors = validateVitals({ ...withGcs, gcs: 14 });
+    expect(errors.some((e) => e.field === "gcs")).toBe(true);
+  });
+
+  it("rejects a partial breakdown (eye only)", () => {
+    const errors = validateVitals({ ...VALID_VITALS, gcsEye: 4 });
+    expect(errors.some((e) => e.field === "gcs")).toBe(true);
+  });
+
+  it("rejects out-of-range component (eye > 4)", () => {
+    const errors = validateVitals({ ...withGcs, gcsEye: 5, gcs: 16 });
+    expect(errors.some((e) => e.field === "gcsEye")).toBe(true);
+  });
+
+  it("rejects motor < 1", () => {
+    const errors = validateVitals({ ...withGcs, gcsMotor: 0, gcs: 9 });
+    expect(errors.some((e) => e.field === "gcsMotor")).toBe(true);
+  });
+});
+
+describe("gcsTotalFromComponents", () => {
+  it("sums the three components", () => {
+    expect(gcsTotalFromComponents({ gcsEye: 3, gcsVerbal: 4, gcsMotor: 5 })).toBe(12);
+  });
+  it("returns undefined when a component is missing", () => {
+    expect(gcsTotalFromComponents({ gcsEye: 3, gcsVerbal: 4 })).toBeUndefined();
+  });
+});
+
 describe("assertValidVitals", () => {
   it("does not throw for valid vitals", () => {
     expect(() => assertValidVitals(VALID_VITALS)).not.toThrow();
@@ -92,6 +129,28 @@ describe("buildVitalObservations", () => {
 
   it("returns 6 observations when temp is 0 (not measured)", () => {
     expect(buildVitalObservations({ ...VALID_VITALS, temp: 0 }, ctx)).toHaveLength(6);
+  });
+
+  it("adds 3 GCS component observations when E/V/M are present", () => {
+    const obs = buildVitalObservations({ ...VALID_VITALS, gcs: 15, gcsEye: 4, gcsVerbal: 5, gcsMotor: 6 }, ctx);
+    // 7 base (temp present) + 3 components
+    expect(obs).toHaveLength(10);
+  });
+
+  it("derives the GCS total observation from the components", () => {
+    const obs = buildVitalObservations(
+      { ...VALID_VITALS, gcs: 99, gcsEye: 3, gcsVerbal: 4, gcsMotor: 5 },
+      ctx,
+    );
+    const total = obs.find((o) => o.code.coding?.[2]?.code === "9269-2");
+    expect(total?.valueQuantity?.value).toBe(12);
+  });
+
+  it("emits no GCS components for a legacy total-only record", () => {
+    const obs = buildVitalObservations(VALID_VITALS, ctx);
+    const componentCodes = obs.flatMap((o) => o.code.coding ?? [])
+      .filter((c) => ["9267-6", "9270-0", "9268-4"].includes(c.code ?? ""));
+    expect(componentCodes).toHaveLength(0);
   });
 
   it("all observations reference the patient", () => {

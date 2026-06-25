@@ -10,8 +10,17 @@ export type { ProvisionalPatientOptions, PatientSex } from "./builders/patient.j
 export { buildPrehospitalEncounter } from "./builders/encounter.js";
 export type { PrehospitalEncounterOptions } from "./builders/encounter.js";
 
-export { buildVitalObservations } from "./builders/observation.js";
+export { buildVitalObservations, gcsTotalFromComponents, GCS_RANGES } from "./builders/observation.js";
 export type { VitalsInput, ObservationContext } from "./builders/observation.js";
+
+export { buildAssessmentResources } from "./builders/assessment.js";
+export type {
+  AssessmentInput,
+  AssessmentContext,
+  AvpuLevel,
+  PupilExam,
+  PupilReactivity,
+} from "./builders/assessment.js";
 
 export { buildChiefComplaintCondition } from "./builders/condition.js";
 export type { ChiefComplaintContext } from "./builders/condition.js";
@@ -31,3 +40,6 @@ export type {
 
 export { validateVitals, assertValidVitals } from "./validators/vitals.js";
 export type { ValidationError } from "./validators/vitals.js";
+
+export { validateAssessment, assertValidAssessment } from "./validators/assessment.js";
+export type { AssessmentValidationError } from "./validators/assessment.js";

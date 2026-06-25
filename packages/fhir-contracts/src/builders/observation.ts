@@ -57,7 +57,49 @@ const VITAL_CONCEPTS = {
     loinc: "9269-2",
     display: "Glasgow coma score total",
   },
+  // GCS sub-scores. CIEL ids are reference-instance values (A-padded to the OpenMRS
+  // concept UUID like the vitals above); validate against the loaded CIEL dictionary
+  // before a deployment relies on the coded mapping. LOINC codes are authoritative.
+  GCS_EYE: {
+    uuid: "162646AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ciel: "162646",
+    loinc: "9267-6",
+    display: "Glasgow coma score eye opening",
+  },
+  GCS_VERBAL: {
+    uuid: "162647AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ciel: "162647",
+    loinc: "9270-0",
+    display: "Glasgow coma score verbal",
+  },
+  GCS_MOTOR: {
+    uuid: "162648AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ciel: "162648",
+    loinc: "9268-4",
+    display: "Glasgow coma score motor",
+  },
 } as const;
+
+/** Valid component ranges for the Glasgow Coma Scale sub-scores. */
+export const GCS_RANGES = {
+  eye: { min: 1, max: 4 },
+  verbal: { min: 1, max: 5 },
+  motor: { min: 1, max: 6 },
+} as const;
+
+/**
+ * Total GCS from its E/V/M components, or `undefined` if any component is missing.
+ * Used by the UI to derive the displayed total and by the builder to keep the
+ * total observation consistent with the components.
+ */
+export function gcsTotalFromComponents(
+  v: Pick<VitalsInput, "gcsEye" | "gcsVerbal" | "gcsMotor">
+): number | undefined {
+  if (v.gcsEye === undefined || v.gcsVerbal === undefined || v.gcsMotor === undefined) {
+    return undefined;
+  }
+  return v.gcsEye + v.gcsVerbal + v.gcsMotor;
+}
 
 export interface VitalsInput {
   /** Heart rate in bpm (0–300) */
@@ -72,8 +114,15 @@ export interface VitalsInput {
   temp: number;
   /** SpO2 percentage (0–100) */
   spo2: number;
-  /** GCS total (3–15) */
+  /** GCS total (3–15). When E/V/M components are present this is derived from them
+   *  (eye + verbal + motor); legacy records carry only this total. */
   gcs: number;
+  /** GCS eye-opening sub-score (1–4). Optional — absent on pre-assessment records. */
+  gcsEye?: number;
+  /** GCS verbal sub-score (1–5). Optional — absent on pre-assessment records. */
+  gcsVerbal?: number;
+  /** GCS motor sub-score (1–6). Optional — absent on pre-assessment records. */
+  gcsMotor?: number;
 }
 
 export interface ObservationContext {
@@ -121,14 +170,26 @@ export function buildVitalObservations(
     };
   }
 
+  // Keep the total consistent with the components when those are captured.
+  const gcsTotal = gcsTotalFromComponents(vitals) ?? vitals.gcs;
+
   const observations = [
     obs(VITAL_CONCEPTS.HR,           vitals.hr,           "/min"),
     obs(VITAL_CONCEPTS.RR,           vitals.rr,           "/min"),
     obs(VITAL_CONCEPTS.BP_SYSTOLIC,  vitals.bpSystolic,   "mm[Hg]"),
     obs(VITAL_CONCEPTS.BP_DIASTOLIC, vitals.bpDiastolic,  "mm[Hg]"),
     obs(VITAL_CONCEPTS.SPO2,         vitals.spo2,         "%"),
-    obs(gcsConcept,                  vitals.gcs,          "{score}"),
+    obs(gcsConcept,                  gcsTotal,            "{score}"),
   ];
+  // GCS sub-scores — emitted only when all three are captured, so the clinician sees
+  // the breakdown (e.g. E1V1M4 vs E4V1M1 at the same total) on the receiving chart.
+  if (gcsTotalFromComponents(vitals) !== undefined) {
+    observations.push(
+      obs(VITAL_CONCEPTS.GCS_EYE,    vitals.gcsEye!,    "{score}"),
+      obs(VITAL_CONCEPTS.GCS_VERBAL, vitals.gcsVerbal!, "{score}"),
+      obs(VITAL_CONCEPTS.GCS_MOTOR,  vitals.gcsMotor!,  "{score}"),
+    );
+  }
   // Temperature is optional — skip the observation if not measured (value = 0).
   // Posting 0°C would display as a valid reading in the OpenMRS chart.
   if (vitals.temp > 0) {

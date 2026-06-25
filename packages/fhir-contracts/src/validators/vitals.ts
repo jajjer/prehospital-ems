@@ -4,7 +4,7 @@
  * obtain one at http://mozilla.org/MPL/2.0/. OpenMRS is also distributed under
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
-import type { VitalsInput } from "../builders/observation.js";
+import { GCS_RANGES, gcsTotalFromComponents, type VitalsInput } from "../builders/observation.js";
 
 export interface ValidationError {
   field: keyof VitalsInput;
@@ -35,6 +35,30 @@ export function validateVitals(input: VitalsInput): ValidationError[] {
   }
   if (input.gcs < 3 || input.gcs > 15) {
     errors.push({ field: "gcs", message: "GCS must be 3–15" });
+  }
+
+  // GCS components are optional, but if any one is entered, all three must be present
+  // and in range, and the total must equal their sum.
+  const components = [input.gcsEye, input.gcsVerbal, input.gcsMotor];
+  const anyComponent = components.some((c) => c !== undefined);
+  if (anyComponent) {
+    if (input.gcsEye === undefined || input.gcsVerbal === undefined || input.gcsMotor === undefined) {
+      errors.push({ field: "gcs", message: "GCS needs all three of eye, verbal and motor" });
+    } else {
+      if (input.gcsEye < GCS_RANGES.eye.min || input.gcsEye > GCS_RANGES.eye.max) {
+        errors.push({ field: "gcsEye", message: `GCS eye must be ${GCS_RANGES.eye.min}–${GCS_RANGES.eye.max}` });
+      }
+      if (input.gcsVerbal < GCS_RANGES.verbal.min || input.gcsVerbal > GCS_RANGES.verbal.max) {
+        errors.push({ field: "gcsVerbal", message: `GCS verbal must be ${GCS_RANGES.verbal.min}–${GCS_RANGES.verbal.max}` });
+      }
+      if (input.gcsMotor < GCS_RANGES.motor.min || input.gcsMotor > GCS_RANGES.motor.max) {
+        errors.push({ field: "gcsMotor", message: `GCS motor must be ${GCS_RANGES.motor.min}–${GCS_RANGES.motor.max}` });
+      }
+      const total = gcsTotalFromComponents(input);
+      if (total !== undefined && total !== input.gcs) {
+        errors.push({ field: "gcs", message: "GCS total must equal eye + verbal + motor" });
+      }
+    }
   }
 
   return errors;

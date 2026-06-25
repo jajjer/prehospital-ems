@@ -31,6 +31,7 @@ const CAPTURE_PHI_FIELDS = [
   "vitalsJson",
   "repeatVitalsJson",
   "interventionsJson",
+  "assessmentJson",
   "lat",
   "lng",
 ] as const satisfies readonly (keyof CaptureLogEntry)[];
