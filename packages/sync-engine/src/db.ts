@@ -8,7 +8,7 @@ import Dexie, { type Table } from "dexie";
 
 export interface WriteQueueItem {
   id: string;
-  resourceType: "Patient" | "Encounter" | "Observation" | "Condition";
+  resourceType: "Patient" | "Encounter" | "Observation" | "Condition" | "MedicationAdministration" | "Procedure";
   resourceId: string;
   body: string;
   enqueuedAt: number;
@@ -80,6 +80,12 @@ export interface CaptureLogEntry {
    *  Shape: Array<{ capturedAt: number; vitalsJson: string }>. The initial set lives in
    *  `vitalsJson`/`capturedAt`; this holds every re-take. PHI — encrypted at rest. */
   repeatVitalsJson?: string;
+  /** JSON-encoded array of interventions/treatments captured against this encounter
+   *  (medications, O2/airway, CPR, splinting, IV/fluids…). Each entry is an
+   *  `InterventionInput` plus a `capturedAt` timestamp; the corresponding FHIR
+   *  MedicationAdministration/Procedure resources are enqueued separately.
+   *  PHI — encrypted at rest. */
+  interventionsJson?: string;
 }
 
 export const SYNC_DB_NAME = "prehospital-ems-sync";

@@ -11,6 +11,7 @@ import {
   buildPrehospitalEncounter,
   buildVitalObservations,
   buildChiefComplaintCondition,
+  buildIntervention,
   validateVitals,
   type VitalsInput,
   type PatientSex,
@@ -21,6 +22,7 @@ import {
 } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 import { EMPTY_VITALS, VitalsGrid } from "./VitalsGrid.js";
+import { InterventionsPicker, toInterventionInputs, type SelectedIntervention } from "./InterventionsPicker.js";
 import { FHIR_BASE, LOCATION_UUID, GCS_CONCEPT_UUID } from "./config.js";
 
 interface Props {
@@ -39,6 +41,7 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
   const [sex, setSex] = useState<PatientSex>("unknown");
   const [age, setAge] = useState("");
   const [complaint, setComplaint] = useState("");
+  const [interventions, setInterventions] = useState<SelectedIntervention[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [pendingBanner, setPendingBanner] = useState(false);
@@ -134,6 +137,7 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
       vitalsJson: JSON.stringify(vitals),
       submissionStatus: "pending",
       encounterId: provisionalEncounterId,
+      ...(interventions.length > 0 ? { interventionsJson: JSON.stringify(toInterventionInputs(interventions)) } : {}),
       ...(gps ? { lat: gps.lat, lng: gps.lng } : {}),
     });
 
@@ -146,6 +150,7 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
       const condition = buildChiefComplaintCondition(complaint.trim(), { patientServerUUID: mrn });
       await enqueue({ id: crypto.randomUUID(), resourceType: "Condition", resourceId: crypto.randomUUID(), body: JSON.stringify(condition), patientId: mrn, encounterId: provisionalEncounterId });
     }
+    await enqueueInterventions(mrn, provisionalEncounterId);
 
     await markCaptureComplete(mrn);
   }
@@ -165,6 +170,7 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
       complaint,
       vitalsJson: JSON.stringify(vitals),
       submissionStatus: "pending",
+      ...(interventions.length > 0 ? { interventionsJson: JSON.stringify(toInterventionInputs(interventions)) } : {}),
       encounterId: target.encounterId,
       joined: true,
       // Server Patient UUID — needed as the Observation subject for any repeat vitals,
@@ -194,8 +200,29 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
         patientId: target.patientServerUUID, encounterId: target.encounterId,
       });
     }
+    await enqueueInterventions(target.patientServerUUID, target.encounterId);
 
     await markCaptureComplete(localMrn);
+  }
+
+  /** Enqueue a MedicationAdministration/Procedure per captured intervention,
+   *  referencing the given patient + encounter (provisional ids for own captures,
+   *  server UUIDs for joined calls). */
+  async function enqueueInterventions(patientRef: string, encounterRef: string) {
+    for (const input of toInterventionInputs(interventions)) {
+      const resource = buildIntervention(input, {
+        patientServerUUID: patientRef,
+        encounterServerUUID: encounterRef,
+      });
+      await enqueue({
+        id: crypto.randomUUID(),
+        resourceType: resource.resourceType,
+        resourceId: crypto.randomUUID(),
+        body: JSON.stringify(resource),
+        patientId: patientRef,
+        encounterId: encounterRef,
+      });
+    }
   }
 
   return (
@@ -339,6 +366,11 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
         {/* Vitals grid */}
         <Section label="Vitals">
           <VitalsGrid vitals={vitals} onChange={setVitals} />
+        </Section>
+
+        {/* Interventions / treatments */}
+        <Section label="Interventions">
+          <InterventionsPicker selected={interventions} onChange={setInterventions} />
         </Section>
 
         {/* Errors */}

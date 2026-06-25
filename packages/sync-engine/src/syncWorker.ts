@@ -74,7 +74,16 @@ export function initSyncWorker(cfg: SyncWorkerConfig): void {
   }
 }
 
-/** Flush the write queue in order: Patient → Encounter → Observation. */
+/** Resource types that depend on a Patient + Encounter and so flush last,
+ *  after their references have been resolved via the identity map. */
+const DEPENDENT_TYPES: ReadonlySet<WriteQueueItem["resourceType"]> = new Set([
+  "Observation",
+  "Condition",
+  "MedicationAdministration",
+  "Procedure",
+]);
+
+/** Flush the write queue in order: Patient → Encounter → dependents. */
 export async function flush(): Promise<void> {
   if (!config || flushing || !navigator.onLine) return;
   flushing = true;
@@ -92,9 +101,7 @@ export async function flush(): Promise<void> {
     // Process in order — Patients first, Encounters second, then dependents
     const patients = ordered.filter((i) => i.resourceType === "Patient");
     const encounters = ordered.filter((i) => i.resourceType === "Encounter");
-    const dependents = ordered.filter(
-      (i) => i.resourceType === "Observation" || i.resourceType === "Condition"
-    );
+    const dependents = ordered.filter((i) => DEPENDENT_TYPES.has(i.resourceType));
 
     for (const item of [...patients, ...encounters, ...dependents]) {
       const result = await processItem(item);
@@ -131,7 +138,7 @@ async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
 
   // Resolve patient/encounter references from identity map before POST
   let body = item.body;
-  if (item.resourceType === "Encounter" || item.resourceType === "Observation" || item.resourceType === "Condition") {
+  if (item.resourceType === "Encounter" || DEPENDENT_TYPES.has(item.resourceType)) {
     body = await resolveReferences(body);
   }
 
