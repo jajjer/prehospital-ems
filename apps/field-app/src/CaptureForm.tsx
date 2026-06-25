@@ -12,7 +12,9 @@ import {
   buildVitalObservations,
   buildChiefComplaintCondition,
   buildIntervention,
+  buildAssessmentResources,
   validateVitals,
+  validateAssessment,
   type VitalsInput,
   type PatientSex,
 } from "@prehospital-ems/fhir-contracts";
@@ -23,6 +25,7 @@ import {
 import { C, FONT } from "./theme.js";
 import { EMPTY_VITALS, VitalsGrid } from "./VitalsGrid.js";
 import { InterventionsPicker, toInterventionInputs, type SelectedIntervention } from "./InterventionsPicker.js";
+import { AssessmentSection, EMPTY_ASSESSMENT, toAssessmentInput, isAssessmentEmpty, type AssessmentForm } from "./AssessmentSection.js";
 import { FHIR_BASE, LOCATION_UUID, GCS_CONCEPT_UUID } from "./config.js";
 
 interface Props {
@@ -42,6 +45,7 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
   const [age, setAge] = useState("");
   const [complaint, setComplaint] = useState("");
   const [interventions, setInterventions] = useState<SelectedIntervention[]>([]);
+  const [assessment, setAssessment] = useState<AssessmentForm>(EMPTY_ASSESSMENT);
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [pendingBanner, setPendingBanner] = useState(false);
@@ -55,7 +59,10 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const errs = validateVitals(vitals).map((e) => e.message);
+    const errs = [
+      ...validateVitals(vitals).map((e) => e.message),
+      ...validateAssessment(toAssessmentInput(assessment)).map((e) => e.message),
+    ];
     if (errs.length > 0) { setErrors(errs); return; }
     setErrors([]);
     setSubmitting(true);
@@ -138,6 +145,7 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
       submissionStatus: "pending",
       encounterId: provisionalEncounterId,
       ...(interventions.length > 0 ? { interventionsJson: JSON.stringify(toInterventionInputs(interventions)) } : {}),
+      ...(isAssessmentEmpty(assessment) ? {} : { assessmentJson: JSON.stringify(toAssessmentInput(assessment)) }),
       ...(gps ? { lat: gps.lat, lng: gps.lng } : {}),
     });
 
@@ -151,6 +159,7 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
       await enqueue({ id: crypto.randomUUID(), resourceType: "Condition", resourceId: crypto.randomUUID(), body: JSON.stringify(condition), patientId: mrn, encounterId: provisionalEncounterId });
     }
     await enqueueInterventions(mrn, provisionalEncounterId);
+    await enqueueAssessment(mrn, provisionalEncounterId);
 
     await markCaptureComplete(mrn);
   }
@@ -171,6 +180,7 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
       vitalsJson: JSON.stringify(vitals),
       submissionStatus: "pending",
       ...(interventions.length > 0 ? { interventionsJson: JSON.stringify(toInterventionInputs(interventions)) } : {}),
+      ...(isAssessmentEmpty(assessment) ? {} : { assessmentJson: JSON.stringify(toAssessmentInput(assessment)) }),
       encounterId: target.encounterId,
       joined: true,
       // Server Patient UUID — needed as the Observation subject for any repeat vitals,
@@ -201,6 +211,7 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
       });
     }
     await enqueueInterventions(target.patientServerUUID, target.encounterId);
+    await enqueueAssessment(target.patientServerUUID, target.encounterId);
 
     await markCaptureComplete(localMrn);
   }
@@ -214,6 +225,26 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
         patientServerUUID: patientRef,
         encounterServerUUID: encounterRef,
       });
+      await enqueue({
+        id: crypto.randomUUID(),
+        resourceType: resource.resourceType,
+        resourceId: crypto.randomUUID(),
+        body: JSON.stringify(resource),
+        patientId: patientRef,
+        encounterId: encounterRef,
+      });
+    }
+  }
+
+  /** Enqueue the FHIR Observations/Condition for the expanded assessment
+   *  (AVPU, pain, glucose, pupils, allergies, meds, history, MOI, narrative). */
+  async function enqueueAssessment(patientRef: string, encounterRef: string) {
+    if (isAssessmentEmpty(assessment)) return;
+    const resources = buildAssessmentResources(toAssessmentInput(assessment), {
+      patientServerUUID: patientRef,
+      encounterServerUUID: encounterRef,
+    });
+    for (const resource of resources) {
       await enqueue({
         id: crypto.randomUUID(),
         resourceType: resource.resourceType,
@@ -371,6 +402,11 @@ export function CaptureForm({ authHeader, onSubmit }: Props) {
         {/* Interventions / treatments */}
         <Section label="Interventions">
           <InterventionsPicker selected={interventions} onChange={setInterventions} />
+        </Section>
+
+        {/* Expanded clinical assessment */}
+        <Section label="Assessment">
+          <AssessmentSection value={assessment} onChange={setAssessment} />
         </Section>
 
         {/* Errors */}

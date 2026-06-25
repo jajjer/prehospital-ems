@@ -66,6 +66,7 @@ describe("PHI at-rest encryption", () => {
       approximateAge: 34,
       complaint: "shortness of breath",
       vitalsJson: JSON.stringify({ hr: 110, spo2: 88 }),
+      assessmentJson: JSON.stringify({ allergies: "penicillin", narrative: "found supine" }),
       submissionStatus: "pending",
       encounterId: "ENC-abc12345",
       lat: -1.2921,
@@ -73,11 +74,12 @@ describe("PHI at-rest encryption", () => {
     });
 
     const raw = await rawGet("captureLog", "MRN-1");
-    for (const field of ["sex", "approximateAge", "complaint", "vitalsJson", "lat", "lng"]) {
+    for (const field of ["sex", "approximateAge", "complaint", "vitalsJson", "assessmentJson", "lat", "lng"]) {
       expect(isEnvelope(raw[field])).toBe(true);
     }
     const serialized = JSON.stringify(raw);
     expect(serialized).not.toContain("shortness of breath");
+    expect(serialized).not.toContain("penicillin");
     expect(serialized).not.toContain("36.8219");
     // mrn, timestamp, and the reference id used by the sync worker stay cleartext.
     expect(raw.mrn).toBe("MRN-1");
@@ -89,6 +91,7 @@ describe("PHI at-rest encryption", () => {
       approximateAge: 34,
       complaint: "shortness of breath",
       vitalsJson: JSON.stringify({ hr: 110, spo2: 88 }),
+      assessmentJson: JSON.stringify({ allergies: "penicillin", narrative: "found supine" }),
       lat: -1.2921,
       lng: 36.8219,
     });

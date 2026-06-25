@@ -86,6 +86,11 @@ export interface CaptureLogEntry {
    *  MedicationAdministration/Procedure resources are enqueued separately.
    *  PHI — encrypted at rest. */
   interventionsJson?: string;
+  /** JSON-encoded `AssessmentInput` — the expanded clinical assessment captured with
+   *  this record (GCS E/V/M, AVPU, pain, glucose, pupils, allergies, meds, history,
+   *  mechanism of injury, narrative). The corresponding FHIR Observation/Condition
+   *  resources are enqueued separately. PHI — encrypted at rest. */
+  assessmentJson?: string;
 }
 
 export const SYNC_DB_NAME = "prehospital-ems-sync";
