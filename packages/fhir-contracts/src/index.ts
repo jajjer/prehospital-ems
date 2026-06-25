@@ -16,5 +16,18 @@ export type { VitalsInput, ObservationContext } from "./builders/observation.js"
 export { buildChiefComplaintCondition } from "./builders/condition.js";
 export type { ChiefComplaintContext } from "./builders/condition.js";
 
+export {
+  buildIntervention,
+  getInterventionConcept,
+  INTERVENTION_CATALOG,
+} from "./builders/intervention.js";
+export type {
+  InterventionConcept,
+  InterventionInput,
+  InterventionContext,
+  InterventionResource,
+  MedRoute,
+} from "./builders/intervention.js";
+
 export { validateVitals, assertValidVitals } from "./validators/vitals.js";
 export type { ValidationError } from "./validators/vitals.js";
