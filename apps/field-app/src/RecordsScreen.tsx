@@ -7,8 +7,9 @@
 import { useState, useEffect } from "react";
 import {
   getRecentCaptures, getCaptureStatus, retryDeadLettered, flush, finalizeEncounter,
-  addVitalsSet, vitalsSeries, enqueue,
+  addVitalsSet, vitalsSeries, enqueue, getConflictsForMrn, resolveConflict,
   type CaptureLogEntry, type CaptureStatus, type VitalsTimePoint,
+  type ConflictLogEntry, type ConflictResolution,
 } from "@prehospital-ems/sync-engine";
 import { buildVitalObservations, validateVitals, type VitalsInput, type AssessmentInput } from "@prehospital-ems/fhir-contracts";
 import { C, FONT } from "./theme.js";
@@ -21,6 +22,8 @@ interface EnrichedEntry extends CaptureLogEntry {
   vitals: VitalsInput;
   /** Full timestamped series (initial + repeats), oldest first. */
   series: VitalsTimePoint[];
+  /** Unresolved sync conflicts for this capture — surfaced for human resolution. */
+  conflicts: ConflictLogEntry[];
 }
 
 /**
@@ -69,6 +72,7 @@ export function RecordsScreen() {
           status: await getCaptureStatus(e.mrn),
           vitals: JSON.parse(latest.vitalsJson) as VitalsInput,
           series,
+          conflicts: await getConflictsForMrn(e.mrn),
         };
       })
     );
@@ -135,6 +139,7 @@ function RecordCard({ record, onRetry, onChanged }: {
   const canAddVitals = !!record.encounterId && !record.handoffAt
     && (!record.joined || !!record.patientRef);
   const setCount = record.series.length;
+  const hasConflict = record.conflicts.length > 0;
 
   return (
     <div
@@ -143,7 +148,7 @@ function RecordCard({ record, onRetry, onChanged }: {
         background: C.surface, border: `1px solid ${C.border}`,
         borderRadius: 8, padding: "0.75rem 0.875rem",
         cursor: "pointer", transition: "border-color 0.1s",
-        borderColor: record.status === "failed" ? C.danger : C.border,
+        borderColor: record.status === "failed" ? C.danger : hasConflict ? C.warning : C.border,
       }}
     >
       {/* Header row */}
@@ -184,6 +189,15 @@ function RecordCard({ record, onRetry, onChanged }: {
           </span>
         )}
       </div>
+
+      {/* Conflict banner — a concurrent server edit was detected; needs human review */}
+      {hasConflict && (
+        <div onClick={(e) => e.stopPropagation()}>
+          {record.conflicts.map((c) => (
+            <ConflictBanner key={c.id} conflict={c} onResolved={onChanged} />
+          ))}
+        </div>
+      )}
 
       {/* Retry button — only shown for failed captures */}
       {record.status === "failed" && (
@@ -495,6 +509,58 @@ function AddVitalsModal({ record, onClose, onSaved }: {
             {saving ? "Saving…" : "Save & Queue"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Surfaces an unresolved sync conflict: a matching record already existed on the
+ * server (created/edited concurrently by another responder or the facility), so this
+ * device's demographics were not applied. The responder reviews and records a
+ * decision — the choice is persisted to the audit trail, never auto-overwritten.
+ */
+function ConflictBanner({ conflict, onResolved }: {
+  conflict: ConflictLogEntry;
+  onResolved: () => void;
+}) {
+  const [resolving, setResolving] = useState(false);
+  const detected = new Date(conflict.detectedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  async function resolve(resolution: ConflictResolution) {
+    setResolving(true);
+    await resolveConflict(conflict.id, resolution);
+    onResolved();
+  }
+
+  const btn = (border: string, color: string): React.CSSProperties => ({
+    flex: 1, padding: "0.4rem", background: "transparent",
+    border: `1px solid ${border}`, borderRadius: 6, color,
+    fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600,
+    cursor: resolving ? "default" : "pointer", opacity: resolving ? 0.5 : 1,
+  });
+
+  return (
+    <div style={{
+      marginTop: "0.625rem", padding: "0.625rem 0.75rem",
+      background: "#2a1e05", border: `1px solid ${C.warning}`, borderRadius: 8,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.3rem" }}>
+        <span style={{ color: C.warning, fontSize: "0.75rem", fontWeight: 700 }}>⚠ Needs review</span>
+        <span style={{ color: C.muted, fontSize: "0.6875rem" }}>· detected {detected}</span>
+      </div>
+      <p style={{ color: C.text, fontSize: "0.75rem", lineHeight: 1.4, margin: "0 0 0.5rem" }}>
+        A matching {conflict.resourceType} already existed on the server, created or edited by
+        another responder or the facility. This device's details were not applied — your captured
+        vitals and notes still attach to that patient. Choose how to resolve:
+      </p>
+      <div style={{ display: "flex", gap: "0.5rem" }}>
+        <button disabled={resolving} onClick={() => void resolve("kept-server")} style={btn(C.border, C.text)}>
+          Keep server record
+        </button>
+        <button disabled={resolving} onClick={() => void resolve("kept-local")} style={btn(C.warning, C.warning)}>
+          Re-enter my details
+        </button>
       </div>
     </div>
   );

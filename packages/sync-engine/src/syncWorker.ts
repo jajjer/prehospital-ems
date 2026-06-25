@@ -7,6 +7,7 @@
 import { db, type WriteQueueItem } from "./db.js";
 import { backoffDelay, shouldDeadLetter, BACKOFF } from "./backoff.js";
 import { encryptBody, decryptBody } from "./phiCrypto.js";
+import { recordConflict } from "./conflictLog.js";
 
 export interface SyncWorkerConfig {
   /** Base URL for the fhir2 endpoint, e.g. http://localhost:8069/openmrs/ws/fhir2/R4 */
@@ -117,19 +118,39 @@ async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
 
   const { fhirBaseUrl, authHeader } = config;
 
-  // On retry, search-before-create for Patient to handle force-close mid-flush
-  if (item.resourceType === "Patient" && item.retryCount > 0) {
-    const body = JSON.parse(item.body) as { identifier?: Array<{ value?: string }> };
-    const provisionalId = body.identifier?.[0]?.value;
+  // Search-before-create for Patient: never POST a duplicate when a record with
+  // this identifier already exists server-side. A match means one of two things:
+  //   - retryCount > 0: our own prior attempt landed before a force-close / network
+  //     drop — idempotent recovery, reconcile silently (no conflict).
+  //   - retryCount === 0: we have never POSTed this Patient, so the server copy was
+  //     created/edited concurrently by another responder or the receiving facility.
+  //     Reconcile to the server UUID (so dependent resources still attach) but record
+  //     the conflict and surface it — this device's demographics were NOT applied, and
+  //     we never silently overwrite clinical PHI.
+  if (item.resourceType === "Patient") {
+    const parsed = JSON.parse(item.body) as { identifier?: Array<{ value?: string }> };
+    const provisionalId = parsed.identifier?.[0]?.value;
     if (provisionalId) {
-      const serverUUID = await searchPatientByIdentifier(provisionalId, fhirBaseUrl, authHeader);
-      if (serverUUID) {
+      const existing = await searchExistingPatient(provisionalId, fhirBaseUrl, authHeader);
+      if (existing) {
         await db.identityMap.put({
           provisionalId,
-          serverUUID,
+          serverUUID: existing.id,
           resourceType: "Patient",
           resolvedAt: Date.now(),
         });
+        if (item.retryCount === 0) {
+          await recordConflict({
+            id: item.id,
+            resourceType: item.resourceType,
+            resourceId: item.resourceId,
+            mrn: item.patientId ?? item.resourceId,
+            serverUUID: existing.id,
+            localEnqueuedAt: item.enqueuedAt,
+            serverLastUpdated: existing.lastUpdated,
+            localBody: item.body,
+          });
+        }
         await db.writeQueue.delete(item.id);
         return;
       }
@@ -190,20 +211,9 @@ async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
       }
     }
 
-    // Conflict detection hook (log only in M1)
-    const serverLastUpdated = resource.meta?.lastUpdated;
-    if (serverLastUpdated && item.enqueuedAt) {
-      const serverTs = new Date(serverLastUpdated).getTime();
-      if (serverTs > item.enqueuedAt) {
-        console.warn("[sync] potential conflict", {
-          resourceType: item.resourceType,
-          resourceId: item.resourceId,
-          localEnqueuedAt: item.enqueuedAt,
-          serverLastUpdated,
-        });
-      }
-    }
-
+    // Conflict detection happens before the POST via search-before-create (see the
+    // Patient block above): a successful create here means no server copy pre-existed,
+    // so there is nothing to conflict with.
     await db.writeQueue.delete(item.id);
     return;
   }
@@ -238,20 +248,33 @@ async function processItem(item: WriteQueueItem): Promise<"abort" | undefined> {
   await new Promise((r) => setTimeout(r, backoffDelay(item.retryCount)));
 }
 
-async function searchPatientByIdentifier(
+/** A pre-existing server Patient found by identifier search. */
+interface ExistingPatient {
+  id: string;
+  /** meta.lastUpdated as Unix ms, if the server provided it. */
+  lastUpdated: number | undefined;
+}
+
+async function searchExistingPatient(
   identifier: string,
   fhirBaseUrl: string,
   authHeader: string
-): Promise<string | null> {
+): Promise<ExistingPatient | null> {
   try {
     const res = await fetch(
       `${fhirBaseUrl}/Patient?identifier=${encodeURIComponent(identifier)}`,
       { headers: { Authorization: authHeader } }
     );
     if (!res.ok) return null;
-    const bundle = await res.json() as { total?: number; entry?: Array<{ resource?: { id?: string } }> };
+    const bundle = await res.json() as {
+      total?: number;
+      entry?: Array<{ resource?: { id?: string; meta?: { lastUpdated?: string } } }>;
+    };
     if ((bundle.total ?? 0) > 0) {
-      return bundle.entry?.[0]?.resource?.id ?? null;
+      const resource = bundle.entry?.[0]?.resource;
+      if (!resource?.id) return null;
+      const lu = resource.meta?.lastUpdated;
+      return { id: resource.id, lastUpdated: lu ? new Date(lu).getTime() : undefined };
     }
     return null;
   } catch {
