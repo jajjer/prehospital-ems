@@ -5,7 +5,7 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { useState, useEffect } from "react";
-import { db } from "@prehospital-ems/sync-engine";
+import { db, getUnresolvedConflictCount } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 
 interface Props {
@@ -16,12 +16,14 @@ interface Props {
 export function StatusBar({ onLogout, onLock }: Props) {
   const [queueCount, setQueueCount] = useState(0);
   const [deadCount, setDeadCount] = useState(0);
+  const [conflictCount, setConflictCount] = useState(0);
   const [online, setOnline] = useState(navigator.onLine);
 
   useEffect(() => {
     const refresh = () => {
       void db.writeQueue.count().then(setQueueCount);
       void db.deadLetter.count().then(setDeadCount);
+      void getUnresolvedConflictCount().then(setConflictCount);
     };
     refresh();
     const id = setInterval(refresh, 2_000);
@@ -61,6 +63,11 @@ export function StatusBar({ onLogout, onLock }: Props) {
         {deadCount > 0 && (
           <span style={{ color: C.danger }}>
             {deadCount} failed
+          </span>
+        )}
+        {conflictCount > 0 && (
+          <span style={{ color: C.warning }}>
+            {conflictCount} to review
           </span>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>

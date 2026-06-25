@@ -5,12 +5,14 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 export { db } from "./db.js";
-export type { WriteQueueItem, DeadLetterItem, IdentityMapEntry, CaptureLogEntry, ConceptCacheEntry } from "./db.js";
+export type { WriteQueueItem, DeadLetterItem, IdentityMapEntry, CaptureLogEntry, ConceptCacheEntry, ConflictLogEntry } from "./db.js";
 export { initSyncWorker, flush, enqueue, finalizeEncounter } from "./syncWorker.js";
 export type { SyncWorkerConfig, FinalizeResult } from "./syncWorker.js";
 export { backoffDelay, shouldDeadLetter, BACKOFF } from "./backoff.js";
 export { logCapture, getRecentCaptures, markCaptureComplete, getPendingCapture, getCaptureStatus, retryDeadLettered, pruneOldCaptures, addVitalsSet, vitalsSeries } from "./captureLog.js";
 export type { CaptureStatus, VitalsTimePoint } from "./captureLog.js";
+export { recordConflict, getUnresolvedConflicts, getUnresolvedConflictCount, getConflictsForMrn, resolveConflict } from "./conflictLog.js";
+export type { ConflictResolution, ConflictInput } from "./conflictLog.js";
 export { seedConcepts, getConceptByUUID, getConceptByCielId } from "./conceptCache.js";
 export { checkActiveCalls } from "./dedup.js";
 export type { ActiveCallSummary } from "./dedup.js";

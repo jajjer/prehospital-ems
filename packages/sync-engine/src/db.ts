@@ -28,6 +28,38 @@ export interface DeadLetterItem {
   failedAt: number;
 }
 
+/**
+ * A sync conflict detected during flush: a resource this device captured already
+ * existed on the server, created/edited concurrently by another responder or the
+ * receiving facility. Persisted as an audit record and surfaced in the Records
+ * screen for human resolution — we never silently overwrite clinical PHI.
+ */
+export interface ConflictLogEntry {
+  /** writeQueue item id that triggered the conflict — primary key. */
+  id: string;
+  resourceType: string;
+  resourceId: string;
+  /** Provisional MRN this conflict belongs to, for linking back to a captureLog row. */
+  mrn: string;
+  /** Server UUID of the pre-existing resource this local write was reconciled to. */
+  serverUUID: string;
+  /** When the local resource was enqueued on this device (Unix ms). */
+  localEnqueuedAt: number;
+  /** meta.lastUpdated of the server copy at detection time (Unix ms), if provided. */
+  serverLastUpdated: number | undefined;
+  /** When the conflict was detected during flush (Unix ms). */
+  detectedAt: number;
+  /** Human-resolution state — "unresolved" until a responder reviews it.
+   *  "kept-server": accept the server copy (this device's details were not applied).
+   *  "kept-local": responder will re-apply this device's details manually at handoff. */
+  resolution: "unresolved" | "kept-server" | "kept-local";
+  /** When a responder resolved the conflict (Unix ms), if resolved. */
+  resolvedAt: number | undefined;
+  /** The local body that was NOT applied to the server, kept for audit / manual
+   *  merge. PHI — encrypted at rest. */
+  localBody: string;
+}
+
 export interface IdentityMapEntry {
   provisionalId: string;
   serverUUID: string;
@@ -101,6 +133,7 @@ export class SyncDatabase extends Dexie {
   identityMap!: Table<IdentityMapEntry, string>;
   captureLog!: Table<CaptureLogEntry, string>;
   concepts!: Table<ConceptCacheEntry, string>;
+  conflictLog!: Table<ConflictLogEntry, string>;
 
   constructor() {
     super(SYNC_DB_NAME);
@@ -141,6 +174,17 @@ export class SyncDatabase extends Dexie {
       identityMap: "provisionalId, serverUUID, resourceType",
       captureLog: "mrn, capturedAt",
       concepts: "uuid, cielId",
+    });
+
+    // v5: add conflictLog — concurrent-edit conflicts surfaced for human resolution.
+    // Indexed by mrn (Records-screen lookup) and resolution (unresolved-count badge).
+    this.version(5).stores({
+      writeQueue: "id, resourceType, resourceId, enqueuedAt, retryCount, [patientId], [encounterId]",
+      deadLetter: "id, resourceType, resourceId, patientId, encounterId, failedAt",
+      identityMap: "provisionalId, serverUUID, resourceType",
+      captureLog: "mrn, capturedAt",
+      concepts: "uuid, cielId",
+      conflictLog: "id, resourceType, mrn, resolution, detectedAt",
     });
   }
 }

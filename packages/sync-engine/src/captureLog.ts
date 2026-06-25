@@ -90,6 +90,7 @@ export async function pruneOldCaptures(): Promise<void> {
   for (const entry of old) {
     await db.writeQueue.filter((i) => i.patientId === entry.mrn || i.resourceId === entry.mrn).delete();
     await db.deadLetter.where("patientId").equals(entry.mrn).delete();
+    await db.conflictLog.where("mrn").equals(entry.mrn).delete();
     await db.captureLog.delete(entry.mrn);
   }
 }

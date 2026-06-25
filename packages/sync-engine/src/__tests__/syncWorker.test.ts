@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest";
 import { db } from "../db.js";
 import { enqueue, initSyncWorker, flush } from "../syncWorker.js";
+import { getConflictsForMrn } from "../conflictLog.js";
 import { isEnvelope } from "../crypto.js";
 
 function define(name: string, value: unknown): void {
@@ -42,6 +43,7 @@ beforeEach(async () => {
     db.deadLetter.clear(),
     db.identityMap.clear(),
     db.captureLog.clear(),
+    db.conflictLog.clear(),
   ]);
   fetchCalls.length = 0;
   dispatched.length = 0;
@@ -171,6 +173,108 @@ describe("flush — search-before-create idempotency on retry", () => {
     expect(fetchCalls.some((c) => c.method === "POST" && c.url.endsWith("/Patient"))).toBe(true);
     expect((await db.identityMap.get(mrn))?.serverUUID).toBe("newly-created-uuid");
     expect(await db.writeQueue.count()).toBe(0);
+  });
+});
+
+describe("flush — conflict detection (concurrent server edit between enqueue and flush)", () => {
+  it("first-attempt Patient already on the server: reconciles, records a conflict, no duplicate POST", async () => {
+    const mrn = "PROV-conf0001";
+    const encId = "ENC-conf0001";
+    // A first-attempt capture (retryCount 0). Between enqueue and flush, another
+    // responder created/edited this same patient on the server.
+    await enqueue({
+      id: "patient-c", resourceType: "Patient", resourceId: mrn,
+      body: JSON.stringify({ resourceType: "Patient", identifier: [{ value: mrn }], note: "secret-phi-conflict" }),
+    });
+    await enqueue({
+      id: "enc-c", resourceType: "Encounter", resourceId: encId, patientId: mrn,
+      body: JSON.stringify({ resourceType: "Encounter", id: encId, subject: { reference: `Patient/${mrn}` } }),
+    });
+
+    const serverLastUpdated = new Date(Date.now() - 1000).toISOString();
+    installFetch((req) => {
+      // Search finds the concurrently-created server patient.
+      if (req.method === "GET" && req.url.includes("/Patient?identifier=")) {
+        return { json: async () => ({ total: 1, entry: [{ resource: { id: "concurrent-server-uuid", meta: { lastUpdated: serverLastUpdated } } }] }) };
+      }
+      // Encounter still POSTs — its dependents attach to the existing patient.
+      return { json: async () => ({ id: "srv-encounter", meta: { lastUpdated: serverLastUpdated } }) };
+    });
+
+    init();
+    await flush();
+
+    // No Patient was POSTed — the concurrent server copy was reused, not duplicated.
+    expect(fetchCalls.some((c) => c.method === "POST" && c.url.endsWith("/Patient"))).toBe(false);
+    // Provisional id reconciled to the existing server UUID so dependents resolve.
+    expect((await db.identityMap.get(mrn))?.serverUUID).toBe("concurrent-server-uuid");
+    // The Encounter (a dependent) resolved its subject to the server patient.
+    const encPost = fetchCalls.find((c) => c.method === "POST" && c.url.endsWith("/Encounter"));
+    expect(encPost?.body).toContain("Patient/concurrent-server-uuid");
+    // Patient queue item is gone; nothing dead-lettered.
+    expect(await db.writeQueue.get("patient-c")).toBeUndefined();
+    expect(await db.deadLetter.count()).toBe(0);
+
+    // A conflict was recorded and surfaced for human resolution.
+    const conflicts = await getConflictsForMrn(mrn);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]?.resolution).toBe("unresolved");
+    expect(conflicts[0]?.serverUUID).toBe("concurrent-server-uuid");
+    expect(conflicts[0]?.resourceType).toBe("Patient");
+    // The un-applied local body is preserved (decrypted) for manual merge…
+    expect(conflicts[0]?.localBody).toContain("secret-phi-conflict");
+    // …but encrypted at rest — no plaintext PHI in the stored row.
+    const stored = await db.conflictLog.get("patient-c");
+    expect(isEnvelope(stored?.localBody)).toBe(true);
+    expect(JSON.stringify(stored)).not.toContain("secret-phi-conflict");
+  });
+
+  it("first-attempt search miss: creates the Patient and records no conflict", async () => {
+    const mrn = "PROV-noconf01";
+    await enqueue({
+      id: "patient-n", resourceType: "Patient", resourceId: mrn,
+      body: JSON.stringify({ resourceType: "Patient", identifier: [{ value: mrn }] }),
+    });
+
+    installFetch((req) => {
+      if (req.method === "GET" && req.url.includes("/Patient?identifier=")) {
+        return { json: async () => ({ total: 0, entry: [] }) };
+      }
+      return { json: async () => ({ id: "fresh-server-uuid", meta: { lastUpdated: new Date(Date.now() - 1000).toISOString() } }) };
+    });
+
+    init();
+    await flush();
+
+    expect(fetchCalls.some((c) => c.method === "POST" && c.url.endsWith("/Patient"))).toBe(true);
+    expect((await db.identityMap.get(mrn))?.serverUUID).toBe("fresh-server-uuid");
+    expect(await getConflictsForMrn(mrn)).toHaveLength(0);
+    expect(await db.conflictLog.count()).toBe(0);
+  });
+
+  it("retry hit (force-close recovery) reconciles silently and records no conflict", async () => {
+    const mrn = "PROV-retry001";
+    await enqueue({
+      id: "patient-r", resourceType: "Patient", resourceId: mrn,
+      body: JSON.stringify({ resourceType: "Patient", identifier: [{ value: mrn }] }),
+    });
+    // retryCount > 0 means our own prior POST may have landed — a match is recovery, not a conflict.
+    await db.writeQueue.update("patient-r", { retryCount: 1 });
+
+    installFetch((req) => {
+      if (req.method === "GET" && req.url.includes("/Patient?identifier=")) {
+        return { json: async () => ({ total: 1, entry: [{ resource: { id: "our-prior-uuid" } }] }) };
+      }
+      return { json: async () => ({ id: "should-not-happen" }) };
+    });
+
+    init();
+    await flush();
+
+    expect(fetchCalls.some((c) => c.method === "POST")).toBe(false);
+    expect((await db.identityMap.get(mrn))?.serverUUID).toBe("our-prior-uuid");
+    // Force-close recovery is not a conflict — nothing is surfaced.
+    expect(await db.conflictLog.count()).toBe(0);
   });
 });
 
