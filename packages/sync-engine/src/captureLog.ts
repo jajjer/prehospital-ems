@@ -56,6 +56,21 @@ export async function addVitalsSet(
 }
 
 /**
+ * Corrects the initial vitals set of a capture in place (issue #13). The amended
+ * values become the record's local source of truth; the immutable audit entries
+ * and the corresponding FHIR correction are recorded separately by the caller.
+ * Only the initial set (`vitalsJson`) is rewritten — repeat sets are untouched.
+ * PHI is re-encrypted before the write. Throws if the capture no longer exists.
+ */
+export async function amendInitialVitals(mrn: string, vitalsJson: string): Promise<void> {
+  const stored = await db.captureLog.get(mrn);
+  if (!stored) throw new Error(`amendInitialVitals: no capture for mrn ${mrn}`);
+  const entry = await decryptCapture(stored);
+  entry.vitalsJson = vitalsJson;
+  await db.captureLog.put(await encryptCapture(entry));
+}
+
+/**
  * Returns the full vitals series for a (decrypted) capture, oldest first: the initial
  * set from `vitalsJson`/`capturedAt` followed by any repeat sets, sorted by time.
  */
@@ -91,6 +106,7 @@ export async function pruneOldCaptures(): Promise<void> {
     await db.writeQueue.filter((i) => i.patientId === entry.mrn || i.resourceId === entry.mrn).delete();
     await db.deadLetter.where("patientId").equals(entry.mrn).delete();
     await db.conflictLog.where("mrn").equals(entry.mrn).delete();
+    await db.amendmentLog.where("mrn").equals(entry.mrn).delete();
     await db.captureLog.delete(entry.mrn);
   }
 }

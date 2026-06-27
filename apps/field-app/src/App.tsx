@@ -9,6 +9,7 @@ import {
   initSyncWorker, flush, pruneOldCaptures, seedConcepts,
   initAppLock, lock as lockApp, getDeviceId, isRemoteWipeRequested, wipeLocalData,
   reconcileTokenStorage, clearTokens, setAuthHeader as persistAuthHeader,
+  captureIdentity, reconcileIdentity, clearIdentity,
 } from "@prehospital-ems/sync-engine";
 import { CaptureForm } from "./CaptureForm.js";
 import { StatusBar } from "./StatusBar.js";
@@ -116,6 +117,10 @@ export function App() {
       });
       void pruneOldCaptures();
       void seedConcepts(REST_BASE, authHeader);
+      // Capture *who* is signed in, so field-record amendments can be attributed
+      // to an authenticated identity (issue #13). Best-effort and online-only;
+      // offline reloads fall back to the identity restored from the keystore below.
+      void captureIdentity(REST_BASE, authHeader);
     }
   }, [authHeader, lockStatus]);
 
@@ -128,6 +133,9 @@ export function App() {
     void reconcileTokenStorage().then((restored) => {
       if (!cancelled && restored) setAuthHeader(restored);
     });
+    // Restore the signed-in identity from the keystore so amendment attribution
+    // survives a reload mid-shift (issue #13).
+    void reconcileIdentity();
     return () => { cancelled = true; };
   }, [lockStatus]);
 
@@ -228,6 +236,7 @@ export function App() {
   function handleLogout() {
     stopProactiveRefresh();
     void clearTokens();
+    void clearIdentity();
     setAuthHeader(null);
   }
 

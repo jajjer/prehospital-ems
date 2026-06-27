@@ -94,6 +94,45 @@ export interface ReconciliationLogEntry {
   reconciledAt: number;
 }
 
+/**
+ * An append-only audit record of a field correction (amendment) to a captured
+ * record — a clinical-legal requirement: once a value is captured, who changed
+ * it to what, and when, must be reconstructable. Entries are immutable: a
+ * correction writes a NEW row (never updates or deletes a prior one), keyed on a
+ * fresh id, so the full history survives. The underlying FHIR data is never
+ * silently overwritten — see {@link ../syncWorker} / the corrected-Observation
+ * flow that pairs with this log.
+ */
+export interface AmendmentLogEntry {
+  /** Fresh uuid per amendment — primary key. Append-only; never reused. */
+  id: string;
+  /** Provisional MRN this amendment belongs to, linking back to a captureLog row. */
+  mrn: string;
+  /** Machine field key that was corrected, e.g. "vitals.hr". */
+  field: string;
+  /** Human-readable label for the field, e.g. "Heart Rate". */
+  label: string;
+  /** Prior value as a display string. PHI — encrypted at rest. */
+  previousValue: string;
+  /** Corrected value as a display string. PHI — encrypted at rest. */
+  newValue: string;
+  /** Display name of the authenticated user who made the correction. */
+  amendedByDisplay: string;
+  /** OpenMRS user UUID of the authenticated user, if known. */
+  amendedByUuid: string | undefined;
+  /** Optional free-text reason for the correction. PHI — encrypted at rest. */
+  reason: string | undefined;
+  /** When the amendment was made (Unix ms). */
+  amendedAt: number;
+  /** Whether the underlying FHIR resource had already reached the server when the
+   *  correction was made — audit context for how the correction propagated.
+   *  true  → a corrected Observation (status "corrected") was enqueued, superseding
+   *          the server copy without overwriting it.
+   *  false → the original had not yet synced; the correction rides the still-queued
+   *          write, so only the corrected value ever reaches the server. */
+  originalSynced: boolean;
+}
+
 export interface ConceptCacheEntry {
   /** OpenMRS concept UUID — primary key */
   uuid: string;
@@ -170,6 +209,7 @@ export class SyncDatabase extends Dexie {
   concepts!: Table<ConceptCacheEntry, string>;
   conflictLog!: Table<ConflictLogEntry, string>;
   reconciliationLog!: Table<ReconciliationLogEntry, string>;
+  amendmentLog!: Table<AmendmentLogEntry, string>;
 
   constructor() {
     super(SYNC_DB_NAME);
@@ -233,6 +273,19 @@ export class SyncDatabase extends Dexie {
       concepts: "uuid, cielId",
       conflictLog: "id, resourceType, mrn, resolution, detectedAt",
       reconciliationLog: "mrn, reconciledAt",
+    });
+
+    // v7: add amendmentLog — append-only audit trail of field corrections
+    // (issue #13). Indexed by mrn (Records-screen lookup) and amendedAt (ordering).
+    this.version(7).stores({
+      writeQueue: "id, resourceType, resourceId, enqueuedAt, retryCount, [patientId], [encounterId]",
+      deadLetter: "id, resourceType, resourceId, patientId, encounterId, failedAt",
+      identityMap: "provisionalId, serverUUID, resourceType",
+      captureLog: "mrn, capturedAt",
+      concepts: "uuid, cielId",
+      conflictLog: "id, resourceType, mrn, resolution, detectedAt",
+      reconciliationLog: "mrn, reconciledAt",
+      amendmentLog: "id, mrn, amendedAt",
     });
   }
 }

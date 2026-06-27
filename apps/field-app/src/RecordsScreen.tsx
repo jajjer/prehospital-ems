@@ -8,10 +8,14 @@ import { useState, useEffect } from "react";
 import {
   getRecentCaptures, getCaptureStatus, retryDeadLettered, flush,
   addVitalsSet, vitalsSeries, enqueue, getConflictsForMrn, resolveConflict,
+  amendInitialVitals, recordAmendment, getAmendmentsForMrn, getCurrentUser,
   type CaptureLogEntry, type CaptureStatus, type VitalsTimePoint,
-  type ConflictLogEntry, type ConflictResolution,
+  type ConflictLogEntry, type ConflictResolution, type AmendmentLogEntry,
 } from "@prehospital-ems/sync-engine";
-import { buildVitalObservations, validateVitals, type VitalsInput, type AssessmentInput } from "@prehospital-ems/fhir-contracts";
+import {
+  buildVitalObservations, buildCorrectedVitalObservations, validateVitals,
+  type VitalsInput, type AssessmentInput, type VitalKey,
+} from "@prehospital-ems/fhir-contracts";
 import { C, FONT } from "./theme.js";
 import { VITALS, EMPTY_VITALS, VitalsGrid, type VitalMeta } from "./VitalsGrid.js";
 import { GCS_CONCEPT_UUID } from "./config.js";
@@ -26,6 +30,84 @@ export interface EnrichedEntry extends CaptureLogEntry {
   series: VitalsTimePoint[];
   /** Unresolved sync conflicts for this capture — surfaced for human resolution. */
   conflicts: ConflictLogEntry[];
+  /** Append-only amendment audit trail for this capture, newest first. */
+  amendments: AmendmentLogEntry[];
+}
+
+/** Human labels for each correctable vitals field, used in the amendment audit. */
+const VITAL_LABELS: Record<VitalKey, string> = {
+  hr: "Heart Rate", rr: "Resp. Rate", bpSystolic: "Systolic BP", bpDiastolic: "Diastolic BP",
+  temp: "Temperature", spo2: "SpO₂", gcs: "GCS Total", gcsEye: "GCS Eye", gcsVerbal: "GCS Verbal", gcsMotor: "GCS Motor",
+};
+
+const VITAL_KEYS = Object.keys(VITAL_LABELS) as VitalKey[];
+
+/** Display string for a vitals value in the audit trail ("—" for an absent value). */
+function vitalDisplay(v: number | undefined): string {
+  return v === undefined || v === 0 ? "—" : String(v);
+}
+
+/** Vitals fields whose value differs between the original and the corrected set. */
+function changedVitalKeys(before: VitalsInput, after: VitalsInput): VitalKey[] {
+  return VITAL_KEYS.filter((k) => (before[k] ?? undefined) !== (after[k] ?? undefined));
+}
+
+/**
+ * Applies a correction to a record's initial vitals set (issue #13): records an
+ * immutable audit entry per changed field (who/what/when), enqueues a corrected
+ * FHIR Observation (status "corrected") for each — superseding the server copy
+ * without overwriting it — and updates the local record so it shows the right
+ * value. Reuses the existing Patient/Encounter; references resolve via the
+ * identity map on flush, so it works offline and before the original has synced.
+ */
+async function submitVitalsAmendment(
+  record: EnrichedEntry,
+  corrected: VitalsInput,
+  reason: string,
+): Promise<void> {
+  const before = JSON.parse(record.vitalsJson) as VitalsInput;
+  const changed = changedVitalKeys(before, corrected);
+  if (changed.length === 0) return;
+
+  const encounterRef = record.encounterId;
+  if (!encounterRef) throw new Error("amendment: capture has no encounter");
+  const patientRef = record.joined ? record.patientRef : record.mrn;
+  if (!patientRef) throw new Error("amendment: capture has no patient reference");
+
+  // Corrected Observations carry the original reading's timestamp so the
+  // correction lines up with the value it replaces on the receiving chart.
+  const observations = buildCorrectedVitalObservations(corrected, changed, {
+    patientServerUUID: patientRef,
+    encounterServerUUID: encounterRef,
+    effectiveTime: new Date(record.capturedAt).toISOString(),
+    gcsConceptUUID: GCS_CONCEPT_UUID,
+  });
+  for (const obs of observations) {
+    await enqueue({
+      id: crypto.randomUUID(), resourceType: "Observation",
+      resourceId: crypto.randomUUID(), body: JSON.stringify(obs),
+      patientId: record.mrn, encounterId: encounterRef,
+    });
+  }
+
+  // Correct the local source of truth, then write the immutable audit entries.
+  await amendInitialVitals(record.mrn, JSON.stringify(corrected));
+  const user = getCurrentUser();
+  const trimmedReason = reason.trim();
+  for (const key of changed) {
+    await recordAmendment({
+      mrn: record.mrn,
+      field: `vitals.${key}`,
+      label: VITAL_LABELS[key],
+      previousValue: vitalDisplay(before[key]),
+      newValue: vitalDisplay(corrected[key]),
+      amendedByDisplay: user?.display ?? "Unknown user",
+      amendedByUuid: user?.uuid,
+      reason: trimmedReason ? trimmedReason : undefined,
+      originalSynced: record.status === "synced",
+    });
+  }
+  void flush();
 }
 
 /**
@@ -75,6 +157,7 @@ export function RecordsScreen({ authHeader }: { authHeader: string }) {
           vitals: JSON.parse(latest.vitalsJson) as VitalsInput,
           series,
           conflicts: await getConflictsForMrn(e.mrn),
+          amendments: await getAmendmentsForMrn(e.mrn),
         };
       })
     );
@@ -134,6 +217,7 @@ function RecordCard({ record, authHeader, onRetry, onChanged }: {
   const [retrying, setRetrying] = useState(false);
   const [showHandoff, setShowHandoff] = useState(false);
   const [addingVitals, setAddingVitals] = useState(false);
+  const [amending, setAmending] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const time = new Date(record.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const date = new Date(record.capturedAt).toLocaleDateString([], { month: "short", day: "numeric" });
@@ -143,6 +227,10 @@ function RecordCard({ record, authHeader, onRetry, onChanged }: {
   const canAddVitals = !!record.encounterId && !record.handoffAt
     && (!record.joined || !!record.patientRef);
   const setCount = record.series.length;
+  // Corrections to captured vitals (typos) are allowed whenever the record has an
+  // encounter and a usable patient reference — including after handoff, since a
+  // clinical-legal correction may surface late. Always audited, never overwritten.
+  const canAmend = !!record.encounterId && (!record.joined || !!record.patientRef);
   const hasConflict = record.conflicts.length > 0;
   const reconciled = !!record.reconciledPatientUUID;
   // Reconcile a still-provisional record once it has synced — joined calls already
@@ -277,6 +365,25 @@ function RecordCard({ record, authHeader, onRetry, onChanged }: {
         </div>
       )}
 
+      {/* Amend vitals — correct a captured (typo'd) value; audited, never overwritten */}
+      {canAmend && (
+        <div style={{ marginTop: "0.625rem" }} onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => setAmending(true)}
+            style={{
+              width: "100%", padding: "0.4rem",
+              background: "transparent",
+              border: `1px solid ${C.border}`,
+              borderRadius: 6, color: C.muted,
+              fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Amend vitals
+          </button>
+        </div>
+      )}
+
       {/* Reconcile identity — link this provisional record to a confirmed OpenMRS patient */}
       {canReconcile && (
         <div style={{ marginTop: "0.625rem" }} onClick={(e) => e.stopPropagation()}>
@@ -330,6 +437,7 @@ function RecordCard({ record, authHeader, onRetry, onChanged }: {
             </div>
           )}
           <AssessmentDetail vitals={record.vitals} assessmentJson={record.assessmentJson} />
+          <AmendmentHistory amendments={record.amendments} />
         </div>
       )}
 
@@ -339,6 +447,15 @@ function RecordCard({ record, authHeader, onRetry, onChanged }: {
           record={record}
           onClose={() => setAddingVitals(false)}
           onSaved={() => { setAddingVitals(false); onChanged(); }}
+        />
+      )}
+
+      {/* Amend-vitals modal */}
+      {amending && (
+        <AmendVitalsModal
+          record={record}
+          onClose={() => setAmending(false)}
+          onSaved={() => { setAmending(false); onChanged(); }}
         />
       )}
 
@@ -556,6 +673,155 @@ function AddVitalsModal({ record, onClose, onSaved }: {
             {saving ? "Saving…" : "Save & Queue"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Corrects a captured (typo'd) vitals value. Pre-filled with the record's initial
+ * set; on save each changed field is written to the immutable amendment audit trail
+ * and a corrected FHIR Observation is enqueued. An optional reason is captured.
+ */
+function AmendVitalsModal({ record, onClose, onSaved }: {
+  record: EnrichedEntry;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [vitals, setVitals] = useState<VitalsInput>(() => JSON.parse(record.vitalsJson) as VitalsInput);
+  const [reason, setReason] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    const errs = validateVitals(vitals).map((e) => e.message);
+    if (errs.length > 0) { setErrors(errs); return; }
+    const original = JSON.parse(record.vitalsJson) as VitalsInput;
+    if (changedVitalKeys(original, vitals).length === 0) {
+      setErrors(["No changes to save — adjust a value first."]);
+      return;
+    }
+    setErrors([]);
+    setSaving(true);
+    try {
+      await submitVitalsAmendment(record, vitals, reason);
+      onSaved();
+    } catch {
+      setErrors(["Could not save the amendment. Try again."]);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 200, padding: "1rem", fontFamily: FONT,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.surface, border: `1px solid ${C.border}`,
+          borderRadius: 12, padding: "1.25rem", width: "100%", maxWidth: 420,
+          maxHeight: "90dvh", overflowY: "auto",
+        }}
+      >
+        <p style={{ fontWeight: 700, fontSize: "0.9375rem", marginBottom: "0.25rem", color: C.text }}>
+          Amend vitals
+        </p>
+        <p style={{ color: C.muted, fontSize: "0.8125rem", marginBottom: "1rem" }}>
+          Correct a captured value for {record.complaint || "this patient"}. The original is preserved —
+          every change is recorded with your name and the time.
+        </p>
+
+        <VitalsGrid vitals={vitals} onChange={setVitals} />
+
+        <div style={{ marginTop: "0.875rem" }}>
+          <div style={{ fontSize: "0.6875rem", color: C.muted, marginBottom: "0.3rem", fontWeight: 500 }}>
+            Reason (optional)
+          </div>
+          <input
+            type="text" placeholder="e.g. transposed digits at capture"
+            value={reason} onChange={(e) => setReason(e.target.value)}
+            maxLength={255}
+            style={{
+              background: "#162032", border: `1px solid ${C.border}`,
+              borderRadius: 6, padding: "0.5rem 0.625rem",
+              color: C.text, fontFamily: FONT, fontSize: "0.9375rem",
+              outline: "none", width: "100%", boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        {errors.length > 0 && (
+          <div style={{ background: C.dangerBg, border: `1px solid ${C.danger}`, borderRadius: 8, padding: "0.625rem 0.875rem", marginTop: "0.875rem" }}>
+            {errors.map((e) => (
+              <div key={e} style={{ color: C.danger, fontSize: "0.8125rem" }}>• {e}</div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: "0.625rem", marginTop: "1rem" }}>
+          <button
+            onClick={onClose}
+            style={{
+              flex: 1, padding: "0.75rem", background: "transparent",
+              border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted,
+              fontFamily: FONT, fontSize: "0.875rem", fontWeight: 500, cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void handleSave()}
+            disabled={saving}
+            style={{
+              flex: 2, padding: "0.75rem",
+              background: saving ? C.border : C.primary, color: "#fff",
+              border: "none", borderRadius: 8,
+              fontFamily: FONT, fontSize: "0.9375rem", fontWeight: 700,
+              cursor: saving ? "default" : "pointer",
+            }}
+          >
+            {saving ? "Saving…" : "Save amendment"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Read-only history of corrections to a record: who changed what, from what to
+ * what, when, and why. Append-only and immutable — the clinical-legal audit trail
+ * surfaced alongside the record. Renders nothing when no amendments exist.
+ */
+function AmendmentHistory({ amendments }: { amendments: AmendmentLogEntry[] }) {
+  if (amendments.length === 0) return null;
+  return (
+    <div style={{ marginTop: "0.625rem", paddingTop: "0.625rem", borderTop: `1px solid ${C.border}` }}>
+      <div style={{ fontSize: "0.625rem", fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.4rem" }}>
+        Amendment history
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        {amendments.map((a) => (
+          <div key={a.id} style={{ fontSize: "0.6875rem", lineHeight: 1.5 }}>
+            <div>
+              <span style={{ color: C.text, fontWeight: 600 }}>{a.label}</span>
+              <span style={{ color: C.muted }}>: </span>
+              <span style={{ color: C.danger, textDecoration: "line-through" }}>{a.previousValue}</span>
+              <span style={{ color: C.muted }}> → </span>
+              <span style={{ color: C.success, fontWeight: 600 }}>{a.newValue}</span>
+            </div>
+            <div style={{ color: C.muted }}>
+              {a.amendedByDisplay} · {new Date(a.amendedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              {a.reason ? ` · ${a.reason}` : ""}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

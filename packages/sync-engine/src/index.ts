@@ -5,14 +5,18 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 export { db } from "./db.js";
-export type { WriteQueueItem, DeadLetterItem, IdentityMapEntry, CaptureLogEntry, ConceptCacheEntry, ConflictLogEntry, ReconciliationLogEntry } from "./db.js";
+export type { WriteQueueItem, DeadLetterItem, IdentityMapEntry, CaptureLogEntry, ConceptCacheEntry, ConflictLogEntry, ReconciliationLogEntry, AmendmentLogEntry } from "./db.js";
 export { initSyncWorker, flush, enqueue, finalizeEncounter, getServerEncounterId } from "./syncWorker.js";
 export type { SyncWorkerConfig, FinalizeResult } from "./syncWorker.js";
 export { backoffDelay, shouldDeadLetter, BACKOFF } from "./backoff.js";
-export { logCapture, getRecentCaptures, markCaptureComplete, getPendingCapture, getCaptureStatus, retryDeadLettered, pruneOldCaptures, addVitalsSet, vitalsSeries } from "./captureLog.js";
+export { logCapture, getRecentCaptures, markCaptureComplete, getPendingCapture, getCaptureStatus, retryDeadLettered, pruneOldCaptures, addVitalsSet, vitalsSeries, amendInitialVitals } from "./captureLog.js";
 export type { CaptureStatus, VitalsTimePoint } from "./captureLog.js";
 export { recordConflict, getUnresolvedConflicts, getUnresolvedConflictCount, getConflictsForMrn, resolveConflict } from "./conflictLog.js";
 export type { ConflictResolution, ConflictInput } from "./conflictLog.js";
+export { recordAmendment, getAmendmentsForMrn } from "./amendmentLog.js";
+export type { AmendmentInput } from "./amendmentLog.js";
+export { getCurrentUser, setCurrentUser, reconcileIdentity, clearIdentity, captureIdentity } from "./identity.js";
+export type { UserIdentity } from "./identity.js";
 export { searchPatientsByMpi, reconcilePatient, getReconciliation } from "./reconciliation.js";
 export type { MpiCandidate, ReconcileResult, ReconcileOptions } from "./reconciliation.js";
 export {
