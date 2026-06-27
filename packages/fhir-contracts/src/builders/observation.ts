@@ -134,41 +134,109 @@ export interface ObservationContext {
   gcsConceptUUID?: string;
 }
 
+/** A vitals concept entry from {@link VITAL_CONCEPTS}. */
+type VitalConcept = { readonly uuid: string; readonly ciel: string; readonly loinc: string; readonly display: string };
+
+/** Subject/encounter/time references shared by every Observation in one build. */
+interface ObservationRefs {
+  subject: { reference: string; type: "Patient" };
+  encounter: { reference: string; type: "Encounter" };
+  effectiveDateTime: string;
+}
+
+/** Build a single vitals Observation. Shared by the initial-capture builder and
+ *  the single-field correction builder so their codings never drift. */
+function vitalObservation(
+  concept: VitalConcept,
+  value: number,
+  unit: string,
+  status: Observation["status"],
+  refs: ObservationRefs,
+): Observation {
+  return {
+    resourceType: "Observation",
+    status,
+    code: {
+      coding: [
+        // Primary: OpenMRS concept UUID (no system = direct UUID lookup in fhir2)
+        { code: concept.uuid, display: concept.display },
+        // Secondary: CIEL terminology for concept mapping resolution
+        { system: CIEL, code: concept.ciel },
+        // Tertiary: LOINC for downstream interoperability
+        { system: LOINC, code: concept.loinc },
+      ],
+    },
+    subject: refs.subject,
+    encounter: refs.encounter,
+    effectiveDateTime: refs.effectiveDateTime,
+    valueQuantity: { value, unit, system: UCUM, code: unit },
+  };
+}
+
+function buildRefs(ctx: ObservationContext): ObservationRefs {
+  return {
+    subject: { reference: `Patient/${ctx.patientServerUUID}`, type: "Patient" },
+    encounter: { reference: `Encounter/${ctx.encounterServerUUID}`, type: "Encounter" },
+    effectiveDateTime: ctx.effectiveTime ?? new Date().toISOString(),
+  };
+}
+
+/** A correctable vitals field — any key of {@link VitalsInput}. */
+export type VitalKey = keyof VitalsInput;
+
+/** Concept + UCUM unit for each individual vitals field, so a single value can be
+ *  corrected (issue #13) with the same coding buildVitalObservations would emit. */
+const VITAL_FIELDS: Record<VitalKey, { concept: VitalConcept; unit: string }> = {
+  hr:          { concept: VITAL_CONCEPTS.HR,           unit: "/min" },
+  rr:          { concept: VITAL_CONCEPTS.RR,           unit: "/min" },
+  bpSystolic:  { concept: VITAL_CONCEPTS.BP_SYSTOLIC,  unit: "mm[Hg]" },
+  bpDiastolic: { concept: VITAL_CONCEPTS.BP_DIASTOLIC, unit: "mm[Hg]" },
+  temp:        { concept: VITAL_CONCEPTS.TEMP,         unit: "Cel" },
+  spo2:        { concept: VITAL_CONCEPTS.SPO2,         unit: "%" },
+  gcs:         { concept: VITAL_CONCEPTS.GCS_TOTAL,    unit: "{score}" },
+  gcsEye:      { concept: VITAL_CONCEPTS.GCS_EYE,      unit: "{score}" },
+  gcsVerbal:   { concept: VITAL_CONCEPTS.GCS_VERBAL,   unit: "{score}" },
+  gcsMotor:    { concept: VITAL_CONCEPTS.GCS_MOTOR,    unit: "{score}" },
+};
+
+/**
+ * Build corrected Observations for just the vitals fields that changed in an
+ * amendment (issue #13). Each carries `status: "corrected"` — the FHIR-idiomatic
+ * way to supersede a prior reading without overwriting or deleting it, so the
+ * server retains the full version history. `effectiveTime` should be the original
+ * reading's timestamp, so the correction lines up with the value it replaces.
+ * Fields whose value is `undefined` (e.g. an absent GCS sub-score) are skipped.
+ */
+export function buildCorrectedVitalObservations(
+  vitals: VitalsInput,
+  changedKeys: readonly VitalKey[],
+  ctx: ObservationContext,
+): Observation[] {
+  const refs = buildRefs(ctx);
+  const out: Observation[] = [];
+  for (const key of changedKeys) {
+    const value = vitals[key];
+    if (value === undefined) continue;
+    const field = VITAL_FIELDS[key];
+    const concept = key === "gcs" && ctx.gcsConceptUUID
+      ? { ...field.concept, uuid: ctx.gcsConceptUUID }
+      : field.concept;
+    out.push(vitalObservation(concept, value, field.unit, "corrected", refs));
+  }
+  return out;
+}
+
 export function buildVitalObservations(
   vitals: VitalsInput,
   ctx: ObservationContext
 ): Observation[] {
-  const effectiveDateTime = ctx.effectiveTime ?? new Date().toISOString();
+  const refs = buildRefs(ctx);
   const gcsConcept = ctx.gcsConceptUUID
     ? { ...VITAL_CONCEPTS.GCS_TOTAL, uuid: ctx.gcsConceptUUID }
     : VITAL_CONCEPTS.GCS_TOTAL;
-  const subject = { reference: `Patient/${ctx.patientServerUUID}`, type: "Patient" as const };
-  const encounter = { reference: `Encounter/${ctx.encounterServerUUID}`, type: "Encounter" as const };
 
-  function obs(
-    concept: { readonly uuid: string; readonly ciel: string; readonly loinc: string; readonly display: string },
-    value: number,
-    unit: string
-  ): Observation {
-    return {
-      resourceType: "Observation",
-      status: "final",
-      code: {
-        coding: [
-          // Primary: OpenMRS concept UUID (no system = direct UUID lookup in fhir2)
-          { code: concept.uuid, display: concept.display },
-          // Secondary: CIEL terminology for concept mapping resolution
-          { system: CIEL, code: concept.ciel },
-          // Tertiary: LOINC for downstream interoperability
-          { system: LOINC, code: concept.loinc },
-        ],
-      },
-      subject,
-      encounter,
-      effectiveDateTime,
-      valueQuantity: { value, unit, system: UCUM, code: unit },
-    };
-  }
+  const obs = (concept: VitalConcept, value: number, unit: string): Observation =>
+    vitalObservation(concept, value, unit, "final", refs);
 
   // Keep the total consistent with the components when those are captured.
   const gcsTotal = gcsTotalFromComponents(vitals) ?? vitals.gcs;

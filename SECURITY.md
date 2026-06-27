@@ -28,6 +28,7 @@ enqueue, flush, dead-letter, capture log, retry — all pass through it.
 | `deadLetter` | `body`                                                 | ids, `statusCode`, `failedAt`, indexes                           |
 | `captureLog` | `sex`, `approximateAge`, `complaint`, `vitalsJson`, `repeatVitalsJson`, `interventionsJson`, `assessmentJson`, `lat`, `lng`, `reconciledName` | `mrn`, `capturedAt`, `submissionStatus`, `encounterId`, `handoffAt`, `joined`, `patientRef`, `reconciledPatientUUID`, `reconciledAt` |
 | `reconciliationLog` | `targetName` (confirmed patient name) | `mrn`, server UUIDs, `targetIdentifier`, `repointedCount`, `reconciledAt` |
+| `amendmentLog` | `previousValue`, `newValue`, `reason` (the corrected clinical values + note) | `id`, `mrn`, `field`, `label`, `amendedByDisplay`, `amendedByUuid`, `amendedAt`, `originalSynced` |
 
 The cleartext columns are local provisional identifiers, timestamps, and sync
 state. They are indexed (so Dexie can query them) and are not, on their own,
@@ -165,6 +166,14 @@ destroyed together with the keystore on logout, remote wipe, or brute-force auto
 wipe. Persistence is gated on the unlock state: while the app is locked the
 tokens are kept in memory only and reconciled to disk once it unlocks, so a token
 write never blocks on an app that has not been unlocked yet.
+
+**Signed-in identity.** So a field-record amendment can be attributed to an
+authenticated user (the audit trail in `amendmentLog`), the OpenMRS user behind
+the session — UUID and display name — is captured at sign-in and held by
+`identity.ts` exactly like the tokens above: in memory for the session, and
+persisted to the keystore (`session-user` row) as an `enc:v1:…` envelope under the
+same data key. It is restored on unlock so attribution survives a reload, and is
+cleared on logout and destroyed with the keystore on wipe.
 
 **Proactive refresh.** Instead of only reacting to a `401` from the sync worker,
 the app schedules a silent refresh to fire ~60s before the access token expires

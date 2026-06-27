@@ -10,8 +10,8 @@ export type { ProvisionalPatientOptions, PatientSex } from "./builders/patient.j
 export { buildPrehospitalEncounter } from "./builders/encounter.js";
 export type { PrehospitalEncounterOptions } from "./builders/encounter.js";
 
-export { buildVitalObservations, gcsTotalFromComponents, GCS_RANGES } from "./builders/observation.js";
-export type { VitalsInput, ObservationContext } from "./builders/observation.js";
+export { buildVitalObservations, buildCorrectedVitalObservations, gcsTotalFromComponents, GCS_RANGES } from "./builders/observation.js";
+export type { VitalsInput, ObservationContext, VitalKey } from "./builders/observation.js";
 
 export { buildAssessmentResources } from "./builders/assessment.js";
 export type {
