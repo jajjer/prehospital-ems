@@ -16,6 +16,7 @@ import { StatusBar } from "./StatusBar.js";
 import { LoginScreen } from "./LoginScreen.js";
 import { LockScreen } from "./LockScreen.js";
 import { RecordsScreen } from "./RecordsScreen.js";
+import { SettingsScreen } from "./SettingsScreen.js";
 import { C, FONT } from "./theme.js";
 import { FHIR_BASE, REST_BASE, IDLE_LOCK_MS, WIPE_CHECK_URL, SYNC_TELEMETRY_URL } from "./config.js";
 import {
@@ -27,7 +28,7 @@ import {
   stopProactiveRefresh,
 } from "./oauth2.js";
 
-type Tab = "capture" | "records";
+type Tab = "capture" | "records" | "settings";
 type LockStatus = "loading" | "unlocked" | "locked" | "error";
 
 export function App() {
@@ -340,7 +341,7 @@ export function App() {
         display: "flex", maxWidth: 480, margin: "0 auto",
         padding: "0 1rem 0", gap: "0.25rem", marginBottom: "1.25rem",
       }}>
-        {(["capture", "records"] as Tab[]).map((t) => (
+        {(["capture", "records", "settings"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => { setTab(t); if (t === "capture") setSubmitted(false); }}
@@ -354,7 +355,7 @@ export function App() {
               cursor: "pointer", transition: "all 0.1s",
             }}
           >
-            {t === "capture" ? "Capture" : "Records"}
+            {t === "capture" ? "Capture" : t === "records" ? "Records" : "Settings"}
           </button>
         ))}
       </div>
@@ -366,8 +367,10 @@ export function App() {
           ) : (
             <CaptureForm authHeader={authHeader} onSubmit={handleSubmit} />
           )
-        ) : (
+        ) : tab === "records" ? (
           <RecordsScreen authHeader={authHeader} />
+        ) : (
+          <SettingsScreen onClose={() => setTab("capture")} />
         )}
       </div>
     </div>

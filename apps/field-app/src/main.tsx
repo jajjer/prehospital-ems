@@ -9,6 +9,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import { flush } from "@prehospital-ems/sync-engine";
+import { loadRuntimeConfig } from "./config.js";
 import { App } from "./App.js";
 
 // The PHI at-rest key and app-lock state are provisioned by App via initAppLock:
@@ -32,4 +33,11 @@ if ("serviceWorker" in navigator) {
 
 const root = document.getElementById("root");
 if (!root) throw new Error("No #root element");
-createRoot(root).render(<StrictMode><App /></StrictMode>);
+
+// Resolve the per-facility runtime config (issue #14) before the first render so
+// the OpenMRS base URL and location/concept UUIDs are correct for login and the
+// first capture. Offline, this falls back to the cached config applied at module
+// load — boot never blocks on the network.
+void loadRuntimeConfig().finally(() => {
+  createRoot(root).render(<StrictMode><App /></StrictMode>);
+});
