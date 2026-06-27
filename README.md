@@ -57,6 +57,15 @@ Each summary carries a **QR code** that deep-links to the FHIR `Encounter` (`{FH
 
 **Confirm handoff** finalizes the encounter in OpenMRS — PATCHes status to `finished` and sets `period.end` — and records the local handoff time. It requires connectivity (a foreground, user-triggered action) and reports network/server errors inline. A finalized record stays viewable so the summary can be re-opened or re-printed at the facility.
 
+## Patient reconciliation (MPI matching)
+
+Field captures begin as a provisional `Unknown Patient` with a `PROV-{uuid8}` identifier. When the real identity is established — typically at or after handoff — **Reconcile identity** on a synced record searches the OpenMRS MPI by name and links the record to the confirmed patient. The workflow is lossless and audited:
+
+- **Pre-sync** (the provisional `Patient` is still queued): its POST is dropped so no orphan is ever created, and the provisional id is mapped straight to the confirmed UUID — the `Encounter` and `Observation`s resolve to the confirmed patient on the next flush via the existing identity map.
+- **Post-sync** (the provisional `Patient` already reached the server): the `Encounter`'s `subject` is re-pointed to the confirmed patient, then every dependent `Observation`/`Condition`/`Procedure`/`MedicationAdministration` for that encounter is re-pointed too. Future resources (e.g. serial vitals) follow via the updated map.
+
+The provisional identifier is preserved (it stays the record's key), confirmed demographics are never overwritten, and each reconciliation is written to a `reconciliationLog` audit record (the confirmed name encrypted at rest). The Records card and handoff summary then show the confirmed name.
+
 ## FHIR Resource Mapping
 
 | Clinical concept | FHIR resource | Notes |

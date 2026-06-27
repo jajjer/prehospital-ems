@@ -34,6 +34,7 @@ const CAPTURE_PHI_FIELDS = [
   "assessmentJson",
   "lat",
   "lng",
+  "reconciledName",
 ] as const satisfies readonly (keyof CaptureLogEntry)[];
 
 /** Encrypt a FHIR resource body string for at-rest storage. */

@@ -398,7 +398,9 @@ export function latestVitals(record: EnrichedEntry): VitalsInput {
 function demographics(record: EnrichedEntry): string {
   const sex = record.sex === "male" ? "Male" : record.sex === "female" ? "Female" : "Unknown sex";
   const age = record.approximateAge !== undefined ? `, ~${record.approximateAge}y` : "";
-  return `${sex}${age}`;
+  // Once reconciled, lead with the confirmed name; the provisional sex/age follow.
+  const name = record.reconciledName ? `${record.reconciledName} — ` : "";
+  return `${name}${sex}${age}`;
 }
 
 export interface FormattedIntervention {

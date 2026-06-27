@@ -358,7 +358,7 @@ export function App() {
             <CaptureForm authHeader={authHeader} onSubmit={handleSubmit} />
           )
         ) : (
-          <RecordsScreen />
+          <RecordsScreen authHeader={authHeader} />
         )}
       </div>
     </div>
