@@ -1,0 +1,8 @@
+{
+  "_comment": "Per-facility runtime configuration (issue #14). This file is served as-is from the app origin and read on boot — edit it on the host to re-point a deployment WITHOUT rebuilding. Values here override the built-in defaults and any build-time VITE_ vars; a device admin can further override them locally via the in-app Settings screen. Unknown keys are ignored. Remove a key to fall back to its default.",
+  "openmrsBaseUrl": "/openmrs",
+  "locationUuid": "44c3efb0-2583-4c80-a79e-1f756a03c0a1",
+  "gcsConceptUuid": "8a7ff9be-79af-4485-9499-094597f01335",
+  "idleLockMinutes": 5,
+  "receivingLocations": []
+}

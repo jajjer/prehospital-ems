@@ -5,14 +5,40 @@
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
  */
 import { precacheAndRoute, cleanupOutdatedCaches } from "workbox-precaching";
+import { registerRoute } from "workbox-routing";
 
 declare let self: ServiceWorkerGlobalScope;
 
 // Precache the entire app shell (JS, CSS, HTML) so the app loads offline.
 // vite-plugin-pwa injects the manifest at build time; in dev mode this is
 // an empty array (dev assets are served directly from the dev server).
+// config.json is deliberately excluded from the manifest (see vite.config.ts)
+// and handled network-first below.
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
+
+// Per-facility runtime config (issue #14): serve /config.json network-first so an
+// edit on the host takes effect on the next online boot WITHOUT a rebuild, while a
+// cached copy keeps the app working offline. Precaching it would pin a stale copy
+// to the build, so it is excluded from the precache manifest. Hand-written (no
+// workbox-strategies dependency): try the network, update the cache on success,
+// and fall back to the cache when offline.
+const CONFIG_CACHE = "runtime-config";
+registerRoute(
+  ({ url }) => url.pathname === "/config.json",
+  async ({ request }) => {
+    const cache = await self.caches.open(CONFIG_CACHE);
+    try {
+      const fresh = await fetch(request);
+      if (fresh.ok) await cache.put(request, fresh.clone());
+      return fresh;
+    } catch {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      return new Response("{}", { headers: { "Content-Type": "application/json" } });
+    }
+  }
+);
 
 // Background Sync handler — fires when the device reconnects after registering
 // a sync tag via SyncManager.register("fhir-flush").

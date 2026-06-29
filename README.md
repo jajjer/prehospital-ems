@@ -73,7 +73,7 @@ The provisional identifier is preserved (it stays the record's key), confirmed d
 | Patient | `Patient` | Provisional MRN (`PROV-{uuid8}`), "Old Identification Number" type (no Luhn validator). Name set to `Unknown Patient` until confirmed at hospital. |
 | Encounter | `Encounter` | Class `EMER`, type "Facility Visit" via `fhir.openmrs.org/code-system/visit-type`. Status `in-progress`. |
 | Heart rate, resp. rate, BP, SpO₂, temp | `Observation` | CIEL codes via `https://cielterminology.org` + LOINC for interoperability. |
-| GCS total | `Observation` | CIEL 162643. UUID may differ per deployment (see `VITE_GCS_CONCEPT_UUID`). |
+| GCS total | `Observation` | CIEL 162643. UUID may differ per deployment (see `gcsConceptUuid` in [Configuration](#configuration)). |
 | Chief complaint | `Condition` | Category `encounter-diagnosis`, clinical status `active`. |
 
 ## Requirements
@@ -94,27 +94,51 @@ The app has been validated against the `qa`-tagged Docker images in `infra/openm
 
 ## Configuration
 
-All configuration is via Vite environment variables (prefix `VITE_`). Set them in `.env.local` for development or in your deployment environment for production.
+The deployment-specific values (OpenMRS base URL, per-facility location/concept UUIDs, optional endpoints) are resolved **at runtime**, so **one build serves many facilities** — you no longer need a separate build per facility (issue #14). Configuration resolves through four layers, lowest precedence first:
 
-| Variable | Default | Description |
-|---|---|---|
-| `VITE_OPENMRS_BASE_URL` | `/openmrs` (proxied) | Absolute URL to your OpenMRS instance, e.g. `https://openmrs.example.org/openmrs` |
-| `VITE_LOCATION_UUID` | `44c3efb0-2583-4c80-a79e-1f756a03c0a1` | UUID of the OpenMRS location to associate with patients and encounters. Default is "Outpatient Clinic" in the reference app. |
-| `VITE_GCS_CONCEPT_UUID` | `8a7ff9be-79af-4485-9499-094597f01335` | UUID of the GCS Total concept. The default was created manually in the reference instance. If you load the full CIEL dictionary, use the CIEL 162643 UUID from your instance. |
-| `VITE_IDLE_LOCK_MINUTES` | `5` | Minutes of inactivity before the app re-locks and requires the PIN again. The offline queue is never dropped on lock. See [SECURITY.md](SECURITY.md#app-lock-session-timeout--remote-wipe). |
-| `VITE_WIPE_CHECK_URL` | _(unset)_ | Optional admin endpoint for remote wipe. The app GETs it with a `deviceId` query param; a `{ "wipe": true }` response erases all local data. When unset, remote wipe is disabled. |
-| `VITE_SYNC_TELEMETRY_URL` | _(unset)_ | Optional fleet sync-health endpoint. The field app POSTs a PHI-free health snapshot after each flush; the dispatch console GETs the aggregated fleet to render the **Fleet health** dashboard. When unset, telemetry is disabled and the dashboard shows a configuration hint. See [Fleet sync health](#fleet-sync-health). |
+1. **Built-in defaults** — the OpenMRS 3 reference-application values.
+2. **Build-time `VITE_` env** — back-compat; existing single-facility builds keep working unchanged.
+3. **`/config.json`** — a static file served from the app origin, read on boot. **Edit it on the host to re-point a deployment without rebuilding.** It is served network-first with a cache fallback, so changes take effect on the next online boot and the last-known-good copy keeps the app working **offline**.
+4. **In-app Device settings** — admin-entered overrides typed into the field app's **Settings** tab (also reachable pre-login via the *Device settings* link), persisted on the device. Highest precedence, so a single device can be re-pointed in the field. Works fully offline.
 
-In production, `VITE_OPENMRS_BASE_URL` must point to an HTTPS endpoint. The field app uses Basic auth over HTTPS; OAuth2/OIDC is a milestone 2 target.
+### `config.json`
+
+Ships at `apps/field-app/public/config.json` (and `apps/dispatch/public/config.json`). Replace it per facility on the host — no rebuild. Unknown keys are ignored; remove a key to fall back to its default.
+
+```json
+{
+  "openmrsBaseUrl": "/openmrs",
+  "locationUuid": "44c3efb0-2583-4c80-a79e-1f756a03c0a1",
+  "gcsConceptUuid": "8a7ff9be-79af-4485-9499-094597f01335",
+  "idleLockMinutes": 5,
+  "receivingLocations": []
+}
+```
+
+| Key | `VITE_` equivalent | Default | Description |
+|---|---|---|---|
+| `openmrsBaseUrl` | `VITE_OPENMRS_BASE_URL` | `/openmrs` (proxied) | OpenMRS base URL. A same-origin path (e.g. a reverse-proxy `/openmrs`) is recommended — see the CSP note below. |
+| `locationUuid` | `VITE_LOCATION_UUID` | `44c3efb0-…` | Service / capture location for patients and encounters — the EMS origin, **not** the receiving facility. Default is "Outpatient Clinic" in the reference app. |
+| `gcsConceptUuid` | `VITE_GCS_CONCEPT_UUID` | `8a7ff9be-…` | GCS Total concept UUID. The default was created manually in the reference instance; with the full CIEL dictionary use the CIEL 162643 UUID from your instance. |
+| `idleLockMinutes` | `VITE_IDLE_LOCK_MINUTES` | `5` | Minutes of inactivity before the app re-locks. The offline queue is never dropped on lock. See [SECURITY.md](SECURITY.md#app-lock-session-timeout--remote-wipe). |
+| `wipeCheckUrl` | `VITE_WIPE_CHECK_URL` | _(unset)_ | Optional remote-wipe endpoint, GET with a `deviceId` query param; a `{ "wipe": true }` response erases all local data. Unset → disabled. |
+| `syncTelemetryUrl` | `VITE_SYNC_TELEMETRY_URL` | _(unset)_ | Optional fleet sync-health endpoint (shared by field app and dispatch). Unset → telemetry disabled and the dashboard shows a hint. See [Fleet sync health](#fleet-sync-health). |
+| `receivingLocations` | — | `[]` | Candidate receiving facilities (`{ "uuid", "name" }[]`), selected at handoff. Optional — capture never blocks on a receiving location, since the destination is frequently unknown at capture time (see below). |
+
+**Receiving location unknown at capture time.** The crew often doesn't know which facility will receive the patient when they first capture. Capture therefore uses only the service `locationUuid` and never requires a destination; the receiving facility is a downstream concern selected at handoff, populated from the optional `receivingLocations` list. This resolves one of the OpenMRS Talk open questions.
+
+**CSP note.** The OpenMRS base URL is resolved at runtime, so a cross-origin absolute URL set only via `config.json` / Device settings is **not** in the build-time `connect-src` CSP `<meta>`. The recommended multi-facility deployment puts OpenMRS behind a **same-origin reverse proxy** (base path `/openmrs`), which `'self'` already covers. If a facility instead points at a cross-origin absolute URL, add that origin to `connect-src` via the host/CDN CSP response header (see [SECURITY.md](SECURITY.md)).
+
+In production, the OpenMRS endpoint must be HTTPS. The field app uses Basic auth over HTTPS; OAuth2/OIDC is a milestone 2 target.
 
 ### Fleet sync health
 
-A dead-lettered record fails silently on one paramedic's phone, and a device sitting on un-synced records for days is invisible to operations. When `VITE_SYNC_TELEMETRY_URL` is set, each field device publishes its sync health and the dispatch **Fleet health** tab surfaces stuck devices with alert thresholds.
+A dead-lettered record fails silently on one paramedic's phone, and a device sitting on un-synced records for days is invisible to operations. When `syncTelemetryUrl` is set (in `config.json` or the legacy `VITE_SYNC_TELEMETRY_URL`), each field device publishes its sync health and the dispatch **Fleet health** tab surfaces stuck devices with alert thresholds.
 
 **Snapshot contract (PHI-free — counts and metadata only, never patient content):**
 
 ```jsonc
-// Field app → POST {VITE_SYNC_TELEMETRY_URL}
+// Field app → POST {syncTelemetryUrl}
 {
   "deviceId": "…",              // opaque per-device id, no PHI
   "queueDepth": 3,              // items waiting in the write queue
@@ -161,19 +185,19 @@ pnpm lint        # Lint all packages
 
 ## Deployment
 
-1. Set environment variables in your CI/hosting environment (see [Configuration](#configuration)).
-2. Build the field app:
+1. Build the field app **once** — the same artifact serves every facility (see [Configuration](#configuration)):
    ```sh
    cd apps/field-app
    pnpm build
    # Output in apps/field-app/dist — serve as a static site
    ```
-3. Serve `dist/` over HTTPS. Any static host works (nginx, Caddy, S3 + CloudFront).
-4. The app must be served from the same origin as OpenMRS, or CORS must be configured on the OpenMRS backend to allow the field-app origin.
+2. Serve `dist/` over HTTPS. Any static host works (nginx, Caddy, S3 + CloudFront).
+3. **Per facility, edit `dist/config.json`** with that facility's OpenMRS URL and location/concept UUIDs — no rebuild. It is fetched on boot (network-first, cached for offline). A device admin can further override values on-device via the field app's **Settings** tab. Build-time `VITE_` env still works for single-facility deployments that prefer it.
+4. The app must be served from the same origin as OpenMRS, or CORS must be configured on the OpenMRS backend to allow the field-app origin. A same-origin reverse proxy (base path `/openmrs`) is recommended so the strict CSP needs no per-facility changes.
 
 ## Known Limitations
 
-- **GCS UUID is deployment-specific.** The default UUID (`8a7ff9be-...`) was created manually in the reference instance. Deployments with the full CIEL dictionary must set `VITE_GCS_CONCEPT_UUID` to the CIEL 162643 UUID from their instance.
+- **GCS UUID is deployment-specific.** The default UUID (`8a7ff9be-...`) was created manually in the reference instance. Deployments with the full CIEL dictionary must set `gcsConceptUuid` (in `config.json` / Device settings, or the legacy `VITE_GCS_CONCEPT_UUID`) to the CIEL 162643 UUID from their instance.
 - **Basic auth only.** Credentials are stored in `sessionStorage` for the life of the browser tab. OAuth2/OIDC is a milestone 2 target.
 - **Budget OEM battery optimization.** Background Sync is killed on Tecno, Infinix, and itel devices without manual whitelisting in Android battery settings. The `visibilitychange` fallback mitigates this but does not eliminate it. Detection and user prompt for battery whitelisting is a milestone 2 feature.
 - **Single-device capture only.** No multi-responder deduplication in milestone 1. If two paramedics capture the same patient independently, two separate OpenMRS patients are created.

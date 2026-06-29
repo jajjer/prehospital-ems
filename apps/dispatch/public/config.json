@@ -1,0 +1,7 @@
+{
+  "_comment": "Per-deployment runtime configuration for the dispatch console (issue #14). Served as-is from the app origin and read on boot — edit it on the host to re-point a deployment WITHOUT rebuilding. Values here override the built-in defaults and any build-time VITE_ vars. Unknown keys are ignored; remove a key to fall back to its default. Note: rapidproToken is shipped to the browser exactly as a VITE_ var would be — keep this file behind the same access controls as the app, or proxy RapidPro server-side.",
+  "openmrsBaseUrl": "/openmrs",
+  "syncTelemetryUrl": "",
+  "mapStyleUrl": "https://tiles.openfreemap.org/styles/liberty",
+  "mapCenter": [36.8219, -1.2921]
+}

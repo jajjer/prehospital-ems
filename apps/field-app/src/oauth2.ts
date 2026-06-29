@@ -17,8 +17,10 @@ import {
 export const OAUTH2_CLIENT_ID =
   import.meta.env.VITE_OAUTH2_CLIENT_ID as string | undefined;
 
-const AUTHORIZATION_ENDPOINT = `${OPENMRS_BASE}/oauth2/authorize`;
-const TOKEN_ENDPOINT = `${OPENMRS_BASE}/oauth2/token`;
+// Resolved at call time, not module load: OPENMRS_BASE is a live binding that
+// loadRuntimeConfig() may update before the first login (issue #14).
+const authorizationEndpoint = () => `${OPENMRS_BASE}/oauth2/authorize`;
+const tokenEndpoint = () => `${OPENMRS_BASE}/oauth2/token`;
 
 // Refresh the access token this many ms before it actually expires, so a request
 // never goes out with an almost-dead token (and clock skew has some slack).
@@ -62,7 +64,7 @@ export async function startOAuth2Login(): Promise<void> {
     state,
     scope: "openid",
   });
-  window.location.href = `${AUTHORIZATION_ENDPOINT}?${params}`;
+  window.location.href = `${authorizationEndpoint()}?${params}`;
 }
 
 interface TokenResponse {
@@ -97,7 +99,7 @@ export async function exchangeCodeForToken(
   sessionStorage.removeItem(SK.verifier);
 
   try {
-    const res = await fetch(TOKEN_ENDPOINT, {
+    const res = await fetch(tokenEndpoint(), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -126,7 +128,7 @@ export async function refreshAccessToken(): Promise<string | null> {
   if (!refreshToken) return null;
 
   try {
-    const res = await fetch(TOKEN_ENDPOINT, {
+    const res = await fetch(tokenEndpoint(), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({

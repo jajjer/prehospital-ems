@@ -111,7 +111,8 @@ export function FleetHealth({ authHeader }: Props) {
           Fleet telemetry not configured
         </p>
         <p style={{ color: C.muted, fontSize: "0.875rem", lineHeight: 1.6 }}>
-          Set <code style={codeStyle}>VITE_SYNC_TELEMETRY_URL</code> on both the dispatch
+          Set <code style={codeStyle}>syncTelemetryUrl</code> in <code style={codeStyle}>config.json</code>{" "}
+          (or the build-time <code style={codeStyle}>VITE_SYNC_TELEMETRY_URL</code>) on both the dispatch
           console and the field app to collect per-device sync health. Devices POST PHI-free
           snapshots (queue depth, last-sync time, dead-letter count) and this dashboard reads
           them back.

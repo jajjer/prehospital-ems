@@ -9,6 +9,7 @@ import { setAuthHeader } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
 import { REST_BASE } from "./config.js";
 import { OAUTH2_CLIENT_ID, startOAuth2Login } from "./oauth2.js";
+import { SettingsScreen } from "./SettingsScreen.js";
 
 interface Props {
   onLogin: (authHeader: string) => void;
@@ -19,6 +20,17 @@ export function LoginScreen({ onLogin }: Props) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Reachable before sign-in so a freshly-provisioned device can be pointed at
+  // the right OpenMRS instance / facility before it can even log in (issue #14).
+  const [showSettings, setShowSettings] = useState(false);
+
+  if (showSettings) {
+    return (
+      <div style={{ minHeight: "100dvh", background: C.bg, padding: "1.5rem 0", fontFamily: FONT }}>
+        <SettingsScreen onClose={() => setShowSettings(false)} />
+      </div>
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -144,6 +156,20 @@ export function LoginScreen({ onLogin }: Props) {
             {loading ? "Signing in…" : "Sign in"}
           </button>
         </form>
+
+        <div style={{ textAlign: "center", marginTop: "1rem" }}>
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            style={{
+              background: "none", border: "none", color: C.muted,
+              fontFamily: FONT, fontSize: "0.75rem", cursor: "pointer",
+              textDecoration: "underline", padding: "0.25rem",
+            }}
+          >
+            Device settings
+          </button>
+        </div>
       </div>
     </div>
   );

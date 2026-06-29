@@ -17,10 +17,18 @@ import { VitePWA } from "vite-plugin-pwa";
  * The bundle ships only same-origin hashed assets and a same-origin service
  * worker, so `'self'` covers scripts, styles, workers, and the manifest. The
  * one outbound connection is to OpenMRS (and an optional remote-wipe endpoint);
- * when those are configured as absolute URLs their origins are added to
- * `connect-src`. When OpenMRS is reached through the same-origin reverse proxy
- * (the default `/openmrs`), `'self'` already allows it. Because the policy lives
- * in the precached index.html, it applies offline too.
+ * when those are configured as absolute URLs (at build time) their origins are
+ * added to `connect-src`. When OpenMRS is reached through the same-origin reverse
+ * proxy (the default `/openmrs`), `'self'` already allows it. Because the policy
+ * lives in the precached index.html, it applies offline too.
+ *
+ * Note (runtime config — issue #14): the OpenMRS base URL is now resolved at
+ * runtime, so a cross-origin base set only via /config.json or the in-app
+ * Settings is NOT known here and won't be in this meta CSP. The recommended
+ * multi-facility deployment puts OpenMRS behind a same-origin reverse proxy
+ * (base path `/openmrs`), which `'self'` already covers; if you instead point a
+ * facility at a cross-origin absolute URL, add that origin to `connect-src` via
+ * the host/CDN CSP response header. See SECURITY.md / README Configuration.
  *
  * `frame-ancestors`, `X-Frame-Options`, and HSTS cannot be set from a `<meta>`
  * tag and must be sent as HTTP response headers by the host/CDN — see
@@ -78,6 +86,13 @@ export default defineConfig(({ mode }) => {
         strategies: "injectManifest",
         srcDir: "src",
         filename: "sw.ts",
+        // Keep the per-facility runtime config (issue #14) OUT of the precache
+        // manifest — precaching would pin a stale copy to the build, defeating
+        // "config changes take effect without a rebuild". The service worker
+        // serves it network-first with a cache fallback instead (see sw.ts).
+        injectManifest: {
+          globIgnores: ["**/config.json"],
+        },
         manifest: {
           name: "EMS Field App",
           short_name: "EMS Field",

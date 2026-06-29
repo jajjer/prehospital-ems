@@ -51,6 +51,7 @@ Sub-Saharan Africa LMIC EMS systems where:
 3. **Encounter status:** The encounter is created with status `in-progress` and should be updated to `finished` with a `period.end` timestamp on patient handoff. Does fhir2 support PATCH for Encounter status, or must we PUT the full resource?
 
 4. **Location:** We default to the "Outpatient Clinic" location UUID from the reference app. What is the recommended pattern for multi-facility deployments where the receiving location is unknown at capture time?
+   - *Our current approach (issue #14):* capture is tagged only with the EMS **service / capture** location (`locationUuid`, resolved at runtime per facility — one build serves many sites) and never requires a destination. The **receiving** facility is treated as a downstream concern, selected at handoff from an optional, runtime-configured `receivingLocations` list. Feedback on whether this matches OpenMRS conventions is especially welcome.
 
 ## Repository
 
