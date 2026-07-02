@@ -16,6 +16,7 @@
  */
 import { useState } from "react";
 import { C, FONT } from "./theme.js";
+import { EnrollmentSection } from "./EnrollmentSection.js";
 import {
   DEFAULT_CONFIG,
   getActiveConfig,
@@ -90,10 +91,15 @@ export function SettingsScreen({ onClose }: Props) {
         <button onClick={onClose} style={ghostBtn} aria-label="Close settings">Close</button>
       </div>
       <p style={{ color: C.muted, fontSize: "0.8125rem", marginBottom: "1.25rem" }}>
-        Per-facility configuration for this device. Overrides the deployment&apos;s{" "}
-        <code style={codeStyle}>config.json</code> and the build defaults. Leave a field blank to
-        use the deployment value. Changes apply immediately — no reinstall needed and they work offline.
+        Per-facility configuration for this device. Enroll with a fleet service to pull it
+        centrally, or set values by hand below. Manual overrides win over the deployment&apos;s{" "}
+        <code style={codeStyle}>config.json</code>, the fleet-pushed config, and the build defaults.
+        Leave a field blank to use those. Changes apply immediately — no reinstall needed and they work offline.
       </p>
+
+      <EnrollmentSection />
+
+      <h3 style={{ fontSize: "0.875rem", fontWeight: 700, margin: "0 0 0.75rem" }}>Manual configuration</h3>
 
       <Field
         label="OpenMRS base URL"

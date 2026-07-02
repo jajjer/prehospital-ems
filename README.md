@@ -94,12 +94,13 @@ The app has been validated against the `qa`-tagged Docker images in `infra/openm
 
 ## Configuration
 
-The deployment-specific values (OpenMRS base URL, per-facility location/concept UUIDs, optional endpoints) are resolved **at runtime**, so **one build serves many facilities** — you no longer need a separate build per facility (issue #14). Configuration resolves through four layers, lowest precedence first:
+The deployment-specific values (OpenMRS base URL, per-facility location/concept UUIDs, optional endpoints) are resolved **at runtime**, so **one build serves many facilities** — you no longer need a separate build per facility (issue #14). Configuration resolves through five layers, lowest precedence first:
 
 1. **Built-in defaults** — the OpenMRS 3 reference-application values.
 2. **Build-time `VITE_` env** — back-compat; existing single-facility builds keep working unchanged.
 3. **`/config.json`** — a static file served from the app origin, read on boot. **Edit it on the host to re-point a deployment without rebuilding.** It is served network-first with a cache fallback, so changes take effect on the next online boot and the last-known-good copy keeps the app working **offline**.
-4. **In-app Device settings** — admin-entered overrides typed into the field app's **Settings** tab (also reachable pre-login via the *Device settings* link), persisted on the device. Highest precedence, so a single device can be re-pointed in the field. Works fully offline.
+4. **Fleet-provisioned config** — the per-device config a device pulls from the provisioning service it enrolled with (issue #15). This is the central fleet-management knob: update a device's config server-side and it applies on the next boot. Cached for offline. See [Device provisioning](#device-provisioning--fleet-management).
+5. **In-app Device settings** — admin-entered overrides typed into the field app's **Settings** tab (also reachable pre-login via the *Device settings* link), persisted on the device. Highest precedence, so a single device can be re-pointed by hand in the field even when managed. Works fully offline.
 
 ### `config.json`
 
@@ -152,6 +153,29 @@ A dead-lettered record fails silently on one paramedic's phone, and a device sit
 ```
 
 The collector (deployment-provided, like the remote-wipe backend) keeps the latest snapshot per device and returns them on `GET` as a bare array or `{ "devices": [...] }`. The dispatch dashboard flags a device as **Alert** when it has dead-lettered records, when its oldest unsynced record exceeds one hour, or when it stops checking in while holding pending work; **Warning** when a record has aged past 15 minutes or a conflict is unresolved.
+
+### Device provisioning / fleet management
+
+Without provisioning, every device is configured by hand and there's no way to push a config change across a fleet. Device provisioning (issue #15) adds a self-service **enrollment** flow and a central **config-push** path, built on the runtime-config layers above.
+
+From the field app's **Settings** → *Fleet enrollment* (reachable pre-login, so a brand-new device can be set up before it can even sign in), an admin enters a **provisioning service URL**, an optional **enrollment code**, and an optional **device label**. On enroll, the device registers its opaque `deviceId` and receives back its configuration, which is applied immediately as the fleet-provisioned layer — including its OpenMRS base, location/concept UUIDs, and its `wipeCheckUrl` / `syncTelemetryUrl`, so **remote wipe and sync-health telemetry are wired up centrally instead of typed on each device.** After enrollment, the device pulls its latest config on **every boot** (network-first, cached for offline), so ops can re-point the whole fleet from one place. A device can still be un-enrolled, or re-pointed by hand — admin overrides win over the fleet-pushed config.
+
+**Identity tie-in.** Enrollment registers the **same** opaque `deviceId` that [remote wipe](SECURITY.md#app-lock-session-timeout--remote-wipe) and [fleet sync health](#fleet-sync-health) already key on, alongside a human `label`, so the provisioning service's roster maps `deviceId → "Medic-7"` for the sync-health dashboard and the wipe console — no PHI, and the telemetry snapshot contract is unchanged.
+
+**Server contract** (deliberately minimal — like remote wipe / telemetry, any backend can implement it):
+
+```jsonc
+// Enroll a device
+POST {provisioningUrl}/enroll
+  → { "deviceId": "…", "enrollmentCode": "…", "label": "Medic-7" }
+  ← { "token": "…", "label": "Medic-7", "fleetId": "…", "config": { /* Partial runtime config */ } }
+
+// Pull this device's latest config (config push), sent on every boot
+GET  {provisioningUrl}/config?deviceId=…      // Authorization: Bearer <token>
+  ← { /* Partial runtime config */ }
+```
+
+Both endpoints are optional; a deployment that doesn't run a provisioning service simply never enrolls, and per-device config keeps coming from `config.json` and Device settings.
 
 ## Dev Setup
 
