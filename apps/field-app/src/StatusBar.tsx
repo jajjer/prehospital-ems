@@ -7,6 +7,7 @@
 import { useState, useEffect } from "react";
 import { db, getUnresolvedConflictCount } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
+import { useI18n } from "./i18n/react.js";
 
 interface Props {
   onLogout: () => void;
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function StatusBar({ onLogout, onLock }: Props) {
+  const { t, formatNumber } = useI18n();
   const [queueCount, setQueueCount] = useState(0);
   const [deadCount, setDeadCount] = useState(0);
   const [conflictCount, setConflictCount] = useState(0);
@@ -50,24 +52,24 @@ export function StatusBar({ onLogout, onLock }: Props) {
           letterSpacing: "0.08em", textTransform: "uppercase",
         }}>EMS</span>
         <span style={{ fontWeight: 600, fontSize: "0.9375rem", color: C.text }}>
-          Field Capture
+          {t("common.appName")}
         </span>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", fontSize: "0.75rem" }}>
         {queueCount > 0 && (
           <span style={{ color: C.warning }}>
-            {queueCount} queued
+            {t("status.queued", { count: formatNumber(queueCount) })}
           </span>
         )}
         {deadCount > 0 && (
           <span style={{ color: C.danger }}>
-            {deadCount} failed
+            {t("status.failed", { count: formatNumber(deadCount) })}
           </span>
         )}
         {conflictCount > 0 && (
           <span style={{ color: C.warning }}>
-            {conflictCount} to review
+            {t("status.toReview", { count: formatNumber(conflictCount) })}
           </span>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
@@ -78,12 +80,12 @@ export function StatusBar({ onLogout, onLock }: Props) {
             boxShadow: online ? `0 0 0 2px #14532d` : `0 0 0 2px #450a0a`,
           }} />
           <span style={{ color: online ? C.success : C.danger, fontWeight: 500 }}>
-            {online ? "Live" : "Offline"}
+            {online ? t("status.live") : t("status.offline")}
           </span>
         </div>
         <button
           onClick={onLock}
-          aria-label="Lock app"
+          aria-label={t("status.lockApp")}
           style={{
             background: "none", border: `1px solid ${C.border}`,
             borderRadius: 4, padding: "0.2rem 0.5rem",
@@ -91,7 +93,7 @@ export function StatusBar({ onLogout, onLock }: Props) {
             cursor: "pointer", letterSpacing: "0.04em",
           }}
         >
-          Lock
+          {t("status.lock")}
         </button>
         <button
           onClick={onLogout}
@@ -102,7 +104,7 @@ export function StatusBar({ onLogout, onLock }: Props) {
             cursor: "pointer", letterSpacing: "0.04em",
           }}
         >
-          Sign out
+          {t("status.signOut")}
         </button>
       </div>
     </header>

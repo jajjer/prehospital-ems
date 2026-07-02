@@ -16,6 +16,8 @@
  */
 import { useState } from "react";
 import { C, FONT } from "./theme.js";
+import { useT } from "./i18n/react.js";
+import { LanguageSwitcher } from "./LanguageSwitcher.js";
 import { EnrollmentSection } from "./EnrollmentSection.js";
 import {
   DEFAULT_CONFIG,
@@ -52,6 +54,7 @@ function formFromOverrides(o: Partial<RuntimeConfig>): FormState {
 }
 
 export function SettingsScreen({ onClose }: Props) {
+  const t = useT();
   const [form, setForm] = useState<FormState>(() => formFromOverrides(getAdminOverrides()));
   const [saved, setSaved] = useState(false);
   // What's actually in effect right now (after all layers resolve) — shown as the
@@ -87,63 +90,62 @@ export function SettingsScreen({ onClose }: Props) {
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 1rem 2rem", fontFamily: FONT, color: C.text }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-        <h2 style={{ fontSize: "1rem", fontWeight: 700, margin: 0 }}>Device settings</h2>
-        <button onClick={onClose} style={ghostBtn} aria-label="Close settings">Close</button>
+        <h2 style={{ fontSize: "1rem", fontWeight: 700, margin: 0 }}>{t("settings.title")}</h2>
+        <button onClick={onClose} style={ghostBtn} aria-label={t("common.close")}>{t("common.close")}</button>
       </div>
       <p style={{ color: C.muted, fontSize: "0.8125rem", marginBottom: "1.25rem" }}>
-        Per-facility configuration for this device. Enroll with a fleet service to pull it
-        centrally, or set values by hand below. Manual overrides win over the deployment&apos;s{" "}
-        <code style={codeStyle}>config.json</code>, the fleet-pushed config, and the build defaults.
-        Leave a field blank to use those. Changes apply immediately — no reinstall needed and they work offline.
+        {t("settings.intro")}
       </p>
+
+      <LanguageSwitcher />
 
       <EnrollmentSection />
 
-      <h3 style={{ fontSize: "0.875rem", fontWeight: 700, margin: "0 0 0.75rem" }}>Manual configuration</h3>
+      <h3 style={{ fontSize: "0.875rem", fontWeight: 700, margin: "0 0 0.75rem" }}>{t("settings.manualConfiguration")}</h3>
 
       <Field
-        label="OpenMRS base URL"
-        hint={`In effect: ${active.openmrsBaseUrl}`}
+        label={t("settings.openmrsBaseUrl")}
+        hint={t("settings.inEffect", { value: active.openmrsBaseUrl })}
         placeholder={DEFAULT_CONFIG.openmrsBaseUrl}
         value={form.openmrsBaseUrl}
         onChange={(v) => set("openmrsBaseUrl", v)}
         autoCapitalize="off"
       />
       <Field
-        label="Location UUID (service / capture location)"
-        hint={`In effect: ${active.locationUuid}`}
+        label={t("settings.locationUuid")}
+        hint={t("settings.inEffect", { value: active.locationUuid })}
         placeholder={DEFAULT_CONFIG.locationUuid}
         value={form.locationUuid}
         onChange={(v) => set("locationUuid", v)}
         autoCapitalize="off"
       />
       <Field
-        label="GCS concept UUID"
-        hint={`In effect: ${active.gcsConceptUuid}`}
+        label={t("settings.gcsConceptUuid")}
+        hint={t("settings.inEffect", { value: active.gcsConceptUuid })}
         placeholder={DEFAULT_CONFIG.gcsConceptUuid}
         value={form.gcsConceptUuid}
         onChange={(v) => set("gcsConceptUuid", v)}
         autoCapitalize="off"
       />
       <Field
-        label="Idle auto-lock (minutes)"
-        hint={`In effect: ${active.idleLockMinutes}`}
+        label={t("settings.idleLockMinutes")}
+        hint={t("settings.inEffect", { value: String(active.idleLockMinutes) })}
         placeholder={String(DEFAULT_CONFIG.idleLockMinutes)}
         value={form.idleLockMinutes}
         onChange={(v) => set("idleLockMinutes", v)}
         inputMode="numeric"
       />
       <Field
-        label="Remote-wipe URL (optional)"
-        hint={active.wipeCheckUrl ? `In effect: ${active.wipeCheckUrl}` : "Unset — remote wipe disabled"}
+        label={t("settings.wipeCheckUrl")}
+        hint={active.wipeCheckUrl ? t("settings.inEffect", { value: active.wipeCheckUrl }) : t("settings.wipeCheckUnset")}
         placeholder="https://admin.example.org/wipe-check"
         value={form.wipeCheckUrl}
         onChange={(v) => set("wipeCheckUrl", v)}
         autoCapitalize="off"
       />
       <Field
-        label="Sync-telemetry URL (optional)"
-        hint={active.syncTelemetryUrl ? `In effect: ${active.syncTelemetryUrl}` : "Unset — telemetry disabled"}
+        label={t("settings.syncTelemetryUrl")}
+        hint={active.syncTelemetryUrl ? t("settings.inEffect", { value: active.syncTelemetryUrl }) : t("settings.syncTelemetryUnset")}
         placeholder="https://admin.example.org/fleet-health"
         value={form.syncTelemetryUrl}
         onChange={(v) => set("syncTelemetryUrl", v)}
@@ -154,18 +156,21 @@ export function SettingsScreen({ onClose }: Props) {
           per-device field — the destination is usually unknown at capture time
           and assigned later at handoff. Surface what's configured for clarity. */}
       <div style={{ marginTop: "0.5rem", marginBottom: "1.25rem" }}>
-        <span style={labelStyle}>Receiving facilities</span>
+        <span style={labelStyle}>{t("settings.receivingFacilities")}</span>
         <p style={{ color: C.muted, fontSize: "0.75rem", margin: "0.25rem 0 0" }}>
           {active.receivingLocations.length === 0
-            ? "None configured. The receiving facility is selected at handoff — capture never requires it, since the destination is often unknown when the crew first captures."
-            : `${active.receivingLocations.length} configured: ${active.receivingLocations.map((l) => l.name).join(", ")}. Selected at handoff.`}
+            ? t("settings.receivingNone")
+            : t("settings.receivingSome", {
+                count: active.receivingLocations.length,
+                names: active.receivingLocations.map((l) => l.name).join(", "),
+              })}
         </p>
       </div>
 
       <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-        <button onClick={handleSave} style={primaryBtn}>Save</button>
-        <button onClick={handleReset} style={ghostBtn}>Reset to deployment defaults</button>
-        {saved && <span style={{ color: C.success, fontSize: "0.8125rem" }}>Saved ✓</span>}
+        <button onClick={handleSave} style={primaryBtn}>{t("common.save")}</button>
+        <button onClick={handleReset} style={ghostBtn}>{t("settings.reset")}</button>
+        {saved && <span style={{ color: C.success, fontSize: "0.8125rem" }}>{t("common.saved")}</span>}
       </div>
     </div>
   );
@@ -207,10 +212,6 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 6, padding: "0.625rem 0.75rem",
   color: C.text, fontFamily: FONT, fontSize: "0.875rem",
   outline: "none", width: "100%", boxSizing: "border-box",
-};
-const codeStyle: React.CSSProperties = {
-  background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4,
-  padding: "0.05rem 0.3rem", fontSize: "0.75rem",
 };
 const primaryBtn: React.CSSProperties = {
   background: C.primary, color: "#fff", border: "none", borderRadius: 8,

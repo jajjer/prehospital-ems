@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { setupPin, unlockWithPin, MIN_PIN_LENGTH, MAX_PIN_ATTEMPTS } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
+import { useI18n } from "./i18n/react.js";
 
 interface Props {
   /** "create" provisions a new PIN; "unlock" verifies an existing one. */
@@ -23,6 +24,7 @@ const MAX_PIN_LENGTH = 8;
  * queue; it only re-arms the encryption gate.
  */
 export function LockScreen({ mode, onDone }: Props) {
+  const { t, formatNumber } = useI18n();
   // In "create" mode the user enters a PIN, then re-enters it to confirm.
   const [stage, setStage] = useState<"enter" | "confirm">("enter");
   const [pin, setPin] = useState("");
@@ -32,11 +34,11 @@ export function LockScreen({ mode, onDone }: Props) {
 
   const creating = mode === "create";
   const title = creating
-    ? (stage === "enter" ? "Create app PIN" : "Confirm PIN")
-    : "Enter PIN";
+    ? (stage === "enter" ? t("lock.createTitle") : t("lock.confirmTitle"))
+    : t("lock.enterTitle");
   const subtitle = creating
-    ? "Protects patient data if this device is lost. Required to open the app."
-    : "Enter your PIN to unlock. Your queued records are safe.";
+    ? t("lock.createSubtitle")
+    : t("lock.unlockSubtitle");
 
   function press(digit: string) {
     if (busy) return;
@@ -62,7 +64,7 @@ export function LockScreen({ mode, onDone }: Props) {
           return;
         }
         if (pin !== firstPin) {
-          setError("PINs do not match. Start over.");
+          setError(t("lock.pinMismatch"));
           setFirstPin("");
           setPin("");
           setStage("enter");
@@ -86,11 +88,13 @@ export function LockScreen({ mode, onDone }: Props) {
       setPin("");
       setError(
         result.remaining !== undefined
-          ? `Wrong PIN. ${result.remaining} attempt${result.remaining === 1 ? "" : "s"} left before data is erased.`
-          : "Wrong PIN.",
+          ? (result.remaining === 1
+            ? t("lock.wrongPinRemainingOne")
+            : t("lock.wrongPinRemaining", { count: formatNumber(result.remaining) }))
+          : t("lock.wrongPin"),
       );
     } catch {
-      setError("Something went wrong. Try again.");
+      setError(t("lock.genericError"));
     } finally {
       setBusy(false);
     }
@@ -135,13 +139,13 @@ export function LockScreen({ mode, onDone }: Props) {
           {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
             <KeyButton key={d} onClick={() => press(d)}>{d}</KeyButton>
           ))}
-          <KeyButton onClick={backspace} aria-label="Delete">⌫</KeyButton>
+          <KeyButton onClick={backspace} aria-label={t("lock.delete")}>⌫</KeyButton>
           <KeyButton onClick={() => press("0")}>0</KeyButton>
           <KeyButton
             onClick={() => void submit()}
             disabled={pin.length < MIN_PIN_LENGTH || busy}
             variant="primary"
-            aria-label={creating && stage === "enter" ? "Next" : creating ? "Set PIN" : "Unlock"}
+            aria-label={creating && stage === "enter" ? t("lock.next") : creating ? t("lock.setPin") : t("lock.unlock")}
           >
             {busy ? "…" : "→"}
           </KeyButton>
@@ -149,7 +153,7 @@ export function LockScreen({ mode, onDone }: Props) {
 
         {!creating && (
           <p style={{ color: C.muted, fontSize: "0.6875rem", marginTop: "1.5rem", lineHeight: 1.4 }}>
-            Data is erased after {MAX_PIN_ATTEMPTS} wrong attempts to protect patient privacy.
+            {t("lock.eraseWarning", { count: formatNumber(MAX_PIN_ATTEMPTS) })}
           </p>
         )}
       </div>
