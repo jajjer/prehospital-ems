@@ -19,9 +19,13 @@
  *   3. A `/config.json` fetched from the app origin on boot. Editable
  *      post-build (no rebuild) and precached/cached for offline — this is the
  *      per-facility deployment knob.
- *   4. Admin-entered overrides typed into the in-app Settings screen and
+ *   4. A per-device config pushed from the fleet provisioning service the device
+ *      enrolled with (issue #15), cached for offline. This is the central
+ *      fleet-management knob: ops update one device's config server-side and it
+ *      pulls the change on the next boot. See {@link ./provisioning}.
+ *   5. Admin-entered overrides typed into the in-app Settings screen and
  *      persisted to localStorage on the device. Highest precedence so a single
- *      device can be re-pointed in the field without touching the server.
+ *      device can still be re-pointed by hand in the field, even when managed.
  *
  * The resolved config is applied synchronously at module load from the cached
  * layers (so the module is usable before `loadRuntimeConfig()` resolves and in
@@ -49,6 +53,16 @@ export interface RuntimeConfig {
    *  (at handoff). Optional and may be empty — capture never blocks on it, since
    *  the receiving location is frequently unknown at capture time. */
   receivingLocations: { uuid: string; name: string }[];
+  /** Base URL of the fleet provisioning service this device enrolled with (issue
+   *  #15). Optional — unset means the device is unmanaged and configured by hand.
+   *  May be seeded via `config.json` to bootstrap enrollment for a deployment. */
+  provisioningUrl?: string;
+  /** Human-readable device name assigned at enrollment (e.g. "Medic-7"). Shown in
+   *  the fleet sync-health dashboard and remote-wipe console next to the opaque
+   *  `deviceId`, tying the managed identity to the telemetry/wipe address. */
+  deviceLabel?: string;
+  /** Fleet / agency this device belongs to, for grouping in fleet management. */
+  fleetId?: string;
 }
 
 /** Built-in defaults — the OpenMRS 3 reference-application values. */
@@ -73,12 +87,17 @@ const STRING_KEYS = [
   "gcsConceptUuid",
   "wipeCheckUrl",
   "syncTelemetryUrl",
+  "provisioningUrl",
+  "deviceLabel",
+  "fleetId",
 ] as const;
 
 const CONFIG_JSON_URL = "/config.json";
 // localStorage keys. The cache lets the device boot offline with the last good
-// config.json; overrides hold admin-entered values that win over everything.
+// config.json; the provisioned layer holds the per-device config pushed by the
+// fleet service; overrides hold admin-entered values that win over everything.
 const CACHE_KEY = "ems_runtime_config_cache";
+const PROVISIONED_KEY = "ems_runtime_config_provisioned";
 const OVERRIDES_KEY = "ems_runtime_config_overrides";
 
 /** Build-time `VITE_` env, kept for back-compat with existing single-facility builds. */
@@ -167,7 +186,12 @@ function applyConfig(c: RuntimeConfig): void {
  *  `fetched` is the just-loaded /config.json (omitted → use the cached copy). */
 function recompute(fetched?: Partial<RuntimeConfig>): RuntimeConfig {
   const cached = fetched ?? readStored(CACHE_KEY);
-  const resolved = resolve(buildTimeOverrides(), cached, readStored(OVERRIDES_KEY));
+  const resolved = resolve(
+    buildTimeOverrides(),
+    cached,
+    readStored(PROVISIONED_KEY),
+    readStored(OVERRIDES_KEY),
+  );
   applyConfig(resolved);
   return config;
 }
@@ -217,9 +241,35 @@ export function setAdminOverrides(overrides: Partial<RuntimeConfig>): RuntimeCon
   return recompute();
 }
 
-/** Drop all admin overrides, falling back to config.json / build-time / defaults. */
+/** Drop all admin overrides, falling back to provisioned / config.json / build-time / defaults. */
 export function clearAdminOverrides(): RuntimeConfig {
   try { localStorage.removeItem(OVERRIDES_KEY); } catch { /* ignore */ }
+  return recompute();
+}
+
+// ── Fleet-provisioned config (enrollment, issue #15) ─────────────────────────
+// The per-device config the fleet provisioning service pushed to this device,
+// cached so a managed device boots with its last-known config offline. Sits above
+// /config.json (the per-deployment file) and below admin overrides (so a device
+// can still be re-pointed by hand). Written by {@link ./provisioning}.
+
+/** The fleet-provisioned config layer currently cached on this device. */
+export function getProvisionedConfig(): Partial<RuntimeConfig> {
+  return readStored(PROVISIONED_KEY);
+}
+
+/** Replace the fleet-provisioned layer and apply it immediately (live bindings
+ *  update in place — no reload needed). */
+export function setProvisionedConfig(provisioned: Partial<RuntimeConfig>): RuntimeConfig {
+  const clean = sanitizeConfig(provisioned);
+  try { localStorage.setItem(PROVISIONED_KEY, JSON.stringify(clean)); } catch { /* quota */ }
+  return recompute();
+}
+
+/** Drop the fleet-provisioned layer (e.g. on un-enrollment), falling back to
+ *  config.json / build-time / defaults. Admin overrides are left untouched. */
+export function clearProvisionedConfig(): RuntimeConfig {
+  try { localStorage.removeItem(PROVISIONED_KEY); } catch { /* ignore */ }
   return recompute();
 }
 

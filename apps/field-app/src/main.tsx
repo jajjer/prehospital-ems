@@ -8,8 +8,9 @@ import "./index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
-import { flush } from "@prehospital-ems/sync-engine";
+import { flush, getDeviceId } from "@prehospital-ems/sync-engine";
 import { loadRuntimeConfig } from "./config.js";
+import { isEnrolled, refreshDeviceConfig } from "./provisioning.js";
 import { App } from "./App.js";
 
 // The PHI at-rest key and app-lock state are provisioned by App via initAppLock:
@@ -38,6 +39,16 @@ if (!root) throw new Error("No #root element");
 // the OpenMRS base URL and location/concept UUIDs are correct for login and the
 // first capture. Offline, this falls back to the cached config applied at module
 // load — boot never blocks on the network.
-void loadRuntimeConfig().finally(() => {
-  createRoot(root).render(<StrictMode><App /></StrictMode>);
-});
+void loadRuntimeConfig()
+  .then(async () => {
+    // Fleet config push (issue #15): a device enrolled with a provisioning service
+    // pulls its latest config on boot, so ops can re-point the fleet centrally.
+    // Fast no-op when unenrolled; offline it keeps the cached provisioned layer.
+    if (!isEnrolled()) return;
+    try {
+      await refreshDeviceConfig({ deviceId: await getDeviceId() });
+    } catch { /* boot never blocks on provisioning */ }
+  })
+  .finally(() => {
+    createRoot(root).render(<StrictMode><App /></StrictMode>);
+  });
