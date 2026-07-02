@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { getDeviceId } from "@prehospital-ems/sync-engine";
 import { C, FONT } from "./theme.js";
+import { useT } from "./i18n/react.js";
 import {
   enrollDevice,
   refreshDeviceConfig,
@@ -29,6 +30,7 @@ import {
 type Msg = { kind: "ok" | "err"; text: string } | null;
 
 export function EnrollmentSection() {
+  const t = useT();
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(() => getEnrollment());
   const [url, setUrl] = useState("");
@@ -54,10 +56,10 @@ export function EnrollmentSection() {
     setBusy(false);
     if (res.ok) {
       setEnrollment(getEnrollment());
-      setMsg({ kind: "ok", text: "Device enrolled — configuration applied." });
+      setMsg({ kind: "ok", text: t("enroll.okEnrolled") });
       setUrl(""); setCode(""); setLabel("");
     } else {
-      setMsg({ kind: "err", text: res.error ?? "Enrollment failed." });
+      setMsg({ kind: "err", text: res.error ?? t("enroll.errEnroll") });
     }
   }
 
@@ -68,62 +70,64 @@ export function EnrollmentSection() {
     const ok = await refreshDeviceConfig({ deviceId });
     setBusy(false);
     setMsg(ok
-      ? { kind: "ok", text: "Configuration updated from the fleet service." }
-      : { kind: "err", text: "Could not reach the fleet service — kept the last cached configuration." });
+      ? { kind: "ok", text: t("enroll.okRefreshed") }
+      : { kind: "err", text: t("enroll.errRefresh") });
   }
 
   function handleUnenroll() {
     unenrollDevice();
     setEnrollment(null);
-    setMsg({ kind: "ok", text: "Device un-enrolled — reverted to local configuration." });
+    setMsg({ kind: "ok", text: t("enroll.okUnenrolled") });
   }
 
   return (
     <div style={cardStyle}>
-      <h3 style={{ fontSize: "0.875rem", fontWeight: 700, margin: "0 0 0.25rem" }}>Fleet enrollment</h3>
+      <h3 style={{ fontSize: "0.875rem", fontWeight: 700, margin: "0 0 0.25rem" }}>{t("enroll.title")}</h3>
       <p style={{ color: C.muted, fontSize: "0.75rem", margin: "0 0 1rem" }}>
-        Enroll this device with a provisioning service to pull its configuration centrally.
-        Managed devices refresh their config on every boot and can be re-pointed fleet-wide from the server.
+        {t("enroll.intro")}
       </p>
 
       {deviceId && (
         <div style={{ marginBottom: "1rem" }}>
-          <span style={labelStyle}>Device ID</span>
+          <span style={labelStyle}>{t("enroll.deviceId")}</span>
           <code style={idStyle}>{deviceId}</code>
           <p style={{ color: C.muted, fontSize: "0.6875rem", margin: "0.25rem 0 0" }}>
-            Also the device&apos;s address for fleet sync-health and remote wipe.
+            {t("enroll.deviceIdHint")}
           </p>
         </div>
       )}
 
       {enrollment ? (
         <>
-          <Row label="Status" value={`Enrolled${enrollment.deviceLabel ? ` as “${enrollment.deviceLabel}”` : ""}`} />
-          {enrollment.fleetId && <Row label="Fleet" value={enrollment.fleetId} />}
-          <Row label="Service" value={enrollment.provisioningUrl} />
+          <Row
+            label={t("enroll.statusLabel")}
+            value={enrollment.deviceLabel ? t("enroll.statusEnrolledAs", { label: enrollment.deviceLabel }) : t("enroll.statusEnrolled")}
+          />
+          {enrollment.fleetId && <Row label={t("enroll.fleet")} value={enrollment.fleetId} />}
+          <Row label={t("enroll.service")} value={enrollment.provisioningUrl} />
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "1rem", flexWrap: "wrap" }}>
             <button onClick={() => void handleRefresh()} disabled={busy} style={primaryBtn}>
-              {busy ? "Checking…" : "Check for config update"}
+              {busy ? t("enroll.checking") : t("enroll.checkUpdate")}
             </button>
-            <button onClick={handleUnenroll} disabled={busy} style={ghostBtn}>Un-enroll</button>
+            <button onClick={handleUnenroll} disabled={busy} style={ghostBtn}>{t("enroll.unenroll")}</button>
           </div>
         </>
       ) : (
         <>
           <EnrollField
-            label="Provisioning service URL"
+            label={t("enroll.serviceUrl")}
             placeholder="https://fleet.example.org/provision"
             value={url}
             onChange={setUrl}
           />
           <EnrollField
-            label="Enrollment code (if required)"
+            label={t("enroll.code")}
             placeholder="e.g. MEDIC-2026"
             value={code}
             onChange={setCode}
           />
           <EnrollField
-            label="Device label (optional)"
+            label={t("enroll.label")}
             placeholder="e.g. Medic-7"
             value={label}
             onChange={setLabel}
@@ -133,7 +137,7 @@ export function EnrollmentSection() {
             disabled={busy || !deviceId || !url.trim()}
             style={{ ...primaryBtn, opacity: busy || !deviceId || !url.trim() ? 0.6 : 1, marginTop: "0.25rem" }}
           >
-            {busy ? "Enrolling…" : "Enroll device"}
+            {busy ? t("enroll.enrolling") : t("enroll.enroll")}
           </button>
         </>
       )}

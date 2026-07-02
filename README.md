@@ -177,6 +177,20 @@ GET  {provisioningUrl}/config?deviceId=…      // Authorization: Bearer <token>
 
 Both endpoints are optional; a deployment that doesn't run a provisioning service simply never enrolls, and per-device config keeps coming from `config.json` and Device settings.
 
+### Localization (i18n)
+
+The UI was English-only; LMIC deployments need local languages, and — like everything else — localization must work **offline** (issue #16). Rather than pull in a heavy framework, the app uses a small, dependency-free i18n core (`src/i18n/`) in keeping with its minimal-dependency design.
+
+- **Externalized strings.** UI strings live in per-locale catalogs (`src/i18n/locales/*.ts`). English (`en.ts`) is the source of truth; every other locale is typed `Record<MessageKey, string>`, so a missing translation is a **compile error**, not a silent English fallback. `{placeholder}` params are interpolated; an unknown key degrades to English, then to the raw key.
+- **Offline language packs.** Catalogs are plain modules **bundled** into the app, so the PWA precache ships them with the build — switching language never touches the network.
+- **Switch language anywhere.** A selector in **Settings** (reachable pre-login, so a device can be set to its local language before anyone signs in) changes locale **instantly** via a small external store — no reload. The choice is persisted and, on first run, seeded from the device language.
+- **RTL support.** Each locale declares its writing direction; the active one is mirrored onto `<html lang dir>` (set before the first paint), so right-to-left languages lay out correctly.
+- **Locale-aware dates/numbers.** Formatting goes through the platform `Intl` APIs (also offline) — e.g. localized thousands separators and Eastern-Arabic numerals.
+
+**Shipped locales:** English (`en`), Kiswahili (`sw`, LTR — proof of a non-English locale for the East-African deployment context), and Arabic (`ar`, RTL — proof of right-to-left end to end). Adding a locale is a drop-in: add a catalog file and one row in `LOCALES`.
+
+> **Scope note.** This pass localizes the app shell and the auth → lock → status → settings → enrollment surfaces. The clinical capture/records/handoff screens carry coded medical content whose translation needs clinician review, so they remain in the source language for now and are tracked as follow-up — the framework is in place to localize them incrementally.
+
 ## Dev Setup
 
 **Prerequisites:** Node.js ≥ 20, pnpm ≥ 10, Docker + Docker Compose.

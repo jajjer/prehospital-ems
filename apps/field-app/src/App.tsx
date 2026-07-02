@@ -18,6 +18,7 @@ import { LockScreen } from "./LockScreen.js";
 import { RecordsScreen } from "./RecordsScreen.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { C, FONT } from "./theme.js";
+import { useI18n, useT } from "./i18n/react.js";
 import { FHIR_BASE, REST_BASE, IDLE_LOCK_MS, WIPE_CHECK_URL, SYNC_TELEMETRY_URL } from "./config.js";
 import {
   OAUTH2_CLIENT_ID,
@@ -32,6 +33,7 @@ type Tab = "capture" | "records" | "settings";
 type LockStatus = "loading" | "unlocked" | "locked" | "error";
 
 export function App() {
+  const { t, formatNumber } = useI18n();
   // Restored asynchronously from encrypted-at-rest storage once the app unlocks
   // — never read from plaintext web storage (issue #3).
   const [authHeader, setAuthHeader] = useState<string | null>(null);
@@ -253,7 +255,7 @@ export function App() {
   if (lockStatus === "loading") {
     return (
       <div style={{ minHeight: "100dvh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT }}>
-        <span style={{ color: C.muted, fontSize: "0.9375rem" }}>Unlocking…</span>
+        <span style={{ color: C.muted, fontSize: "0.9375rem" }}>{t("app.unlocking")}</span>
       </div>
     );
   }
@@ -262,7 +264,7 @@ export function App() {
     return (
       <div style={{ minHeight: "100dvh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem", textAlign: "center", fontFamily: FONT }}>
         <span style={{ color: C.danger, fontSize: "0.9375rem" }}>
-          Could not unlock secure storage on this device. Close and reopen the app.
+          {t("app.unlockError")}
         </span>
       </div>
     );
@@ -277,7 +279,7 @@ export function App() {
   if (completingOAuth2) {
     return (
       <div style={{ minHeight: "100dvh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT }}>
-        <span style={{ color: C.muted, fontSize: "0.9375rem" }}>Completing sign-in…</span>
+        <span style={{ color: C.muted, fontSize: "0.9375rem" }}>{t("app.completingSignIn")}</span>
       </div>
     );
   }
@@ -298,7 +300,7 @@ export function App() {
           background: "#1e293b", borderBottom: `1px solid ${C.border}`,
           padding: "0.5rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
-          <span style={{ color: C.muted, fontSize: "0.8125rem" }}>Update available</span>
+          <span style={{ color: C.muted, fontSize: "0.8125rem" }}>{t("app.updateAvailable")}</span>
           <button
             onClick={handleSwUpdate}
             style={{
@@ -307,26 +309,26 @@ export function App() {
               cursor: "pointer", fontFamily: FONT,
             }}
           >
-            Refresh
+            {t("app.refresh")}
           </button>
         </div>
       )}
 
       {bgSyncSuppressed && (
-        <WarnBanner onDismiss={() => setBgSyncSuppressed(false)}>
-          Background sync may be disabled by battery optimization. Go to Settings → Apps → Chrome → Battery → Unrestricted.
+        <WarnBanner onDismiss={() => setBgSyncSuppressed(false)} dismissLabel={t("app.dismiss")}>
+          {t("app.bgSyncSuppressed")}
         </WarnBanner>
       )}
 
       {clockSkewMinutes !== null && (
-        <WarnBanner onDismiss={() => setClockSkewMinutes(null)}>
-          Device clock may be off by ~{clockSkewMinutes} min. Vital timestamps could be incorrect — check Settings → Date &amp; Time.
+        <WarnBanner onDismiss={() => setClockSkewMinutes(null)} dismissLabel={t("app.dismiss")}>
+          {t("app.clockSkew", { minutes: formatNumber(clockSkewMinutes) })}
         </WarnBanner>
       )}
 
       {storageWarning && (
-        <WarnBanner onDismiss={() => setStorageWarning(false)}>
-          Device storage is nearly full. Free up space to ensure records can be saved offline.
+        <WarnBanner onDismiss={() => setStorageWarning(false)} dismissLabel={t("app.dismiss")}>
+          {t("app.storageWarning")}
         </WarnBanner>
       )}
 
@@ -341,21 +343,21 @@ export function App() {
         display: "flex", maxWidth: 480, margin: "0 auto",
         padding: "0 1rem 0", gap: "0.25rem", marginBottom: "1.25rem",
       }}>
-        {(["capture", "records", "settings"] as Tab[]).map((t) => (
+        {(["capture", "records", "settings"] as Tab[]).map((tabKey) => (
           <button
-            key={t}
-            onClick={() => { setTab(t); if (t === "capture") setSubmitted(false); }}
+            key={tabKey}
+            onClick={() => { setTab(tabKey); if (tabKey === "capture") setSubmitted(false); }}
             style={{
               flex: 1, padding: "0.5rem",
-              background: tab === t ? C.surface : "transparent",
-              border: `1px solid ${tab === t ? C.border : "transparent"}`,
+              background: tab === tabKey ? C.surface : "transparent",
+              border: `1px solid ${tab === tabKey ? C.border : "transparent"}`,
               borderRadius: 6,
-              color: tab === t ? C.text : C.muted,
-              fontFamily: FONT, fontSize: "0.8125rem", fontWeight: tab === t ? 600 : 400,
+              color: tab === tabKey ? C.text : C.muted,
+              fontFamily: FONT, fontSize: "0.8125rem", fontWeight: tab === tabKey ? 600 : 400,
               cursor: "pointer", transition: "all 0.1s",
             }}
           >
-            {t === "capture" ? "Capture" : t === "records" ? "Records" : "Settings"}
+            {tabKey === "capture" ? t("nav.capture") : tabKey === "records" ? t("nav.records") : t("nav.settings")}
           </button>
         ))}
       </div>
@@ -378,6 +380,7 @@ export function App() {
 }
 
 function ReAuthModal({ onReAuth, useOAuth2 }: { onReAuth: (auth: string) => void; useOAuth2: boolean }) {
+  const t = useT();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -398,10 +401,10 @@ function ReAuthModal({ onReAuth, useOAuth2 }: { onReAuth: (auth: string) => void
         await persistAuthHeader(auth);
         onReAuth(auth);
       } else {
-        setError("Invalid credentials.");
+        setError(t("login.invalidCredentials"));
       }
     } catch {
-      setError("Could not reach OpenMRS. Check network.");
+      setError(t("login.unreachable"));
     } finally {
       setLoading(false);
     }
@@ -417,9 +420,9 @@ function ReAuthModal({ onReAuth, useOAuth2 }: { onReAuth: (auth: string) => void
         background: C.surface, border: `1px solid ${C.border}`,
         borderRadius: 12, padding: "1.5rem", width: "100%", maxWidth: 340,
       }}>
-        <p style={{ fontWeight: 700, marginBottom: "0.25rem" }}>Session expired</p>
+        <p style={{ fontWeight: 700, marginBottom: "0.25rem" }}>{t("app.sessionExpiredTitle")}</p>
         <p style={{ color: C.muted, fontSize: "0.8125rem", marginBottom: "1.25rem" }}>
-          Sign in again to continue syncing. Your queued records are safe.
+          {t("app.sessionExpiredBody")}
         </p>
 
         {useOAuth2 && (
@@ -434,11 +437,11 @@ function ReAuthModal({ onReAuth, useOAuth2 }: { onReAuth: (auth: string) => void
                 fontFamily: FONT, marginBottom: "1rem",
               }}
             >
-              Sign in with OpenMRS
+              {t("login.withOpenMRS")}
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
               <div style={{ flex: 1, height: 1, background: C.border }} />
-              <span style={{ color: C.muted, fontSize: "0.75rem" }}>or</span>
+              <span style={{ color: C.muted, fontSize: "0.75rem" }}>{t("login.orUsernamePassword")}</span>
               <div style={{ flex: 1, height: 1, background: C.border }} />
             </div>
           </>
@@ -446,12 +449,12 @@ function ReAuthModal({ onReAuth, useOAuth2 }: { onReAuth: (auth: string) => void
 
         <form onSubmit={(e) => void handleSubmit(e)}>
           <input
-            type="text" placeholder="Username" autoCapitalize="off"
+            type="text" placeholder={t("login.username")} autoCapitalize="off"
             value={username} onChange={(e) => setUsername(e.target.value)}
             style={{ ...reAuthInputStyle, marginBottom: "0.75rem" }}
           />
           <input
-            type="password" placeholder="Password"
+            type="password" placeholder={t("login.password")}
             value={password} onChange={(e) => setPassword(e.target.value)}
             style={{ ...reAuthInputStyle, marginBottom: error ? "0.75rem" : "1rem" }}
           />
@@ -469,7 +472,7 @@ function ReAuthModal({ onReAuth, useOAuth2 }: { onReAuth: (auth: string) => void
               fontFamily: FONT,
             }}
           >
-            {loading ? "Signing in…" : "Sign in"}
+            {loading ? t("login.signingIn") : t("login.signIn")}
           </button>
         </form>
       </div>
@@ -484,7 +487,7 @@ const reAuthInputStyle: React.CSSProperties = {
   color: C.text, fontFamily: FONT, fontSize: "0.9375rem", outline: "none",
 };
 
-function WarnBanner({ children, onDismiss }: { children: React.ReactNode; onDismiss: () => void }) {
+function WarnBanner({ children, onDismiss, dismissLabel }: { children: React.ReactNode; onDismiss: () => void; dismissLabel: string }) {
   return (
     <div style={{
       background: "#1c1a0a", borderBottom: `1px solid #ca8a04`,
@@ -494,6 +497,7 @@ function WarnBanner({ children, onDismiss }: { children: React.ReactNode; onDism
       <span style={{ color: "#fbbf24", fontSize: "0.8125rem" }}>{children}</span>
       <button
         onClick={onDismiss}
+        aria-label={dismissLabel}
         style={{
           background: "none", border: "none", color: "#ca8a04",
           cursor: "pointer", fontSize: "1rem", padding: 0, flexShrink: 0,
@@ -505,6 +509,7 @@ function WarnBanner({ children, onDismiss }: { children: React.ReactNode; onDism
 }
 
 function SuccessScreen({ onNew }: { onNew: () => void }) {
+  const t = useT();
   return (
     <div style={{ paddingTop: "3rem", textAlign: "center" }}>
       <div style={{
@@ -516,10 +521,10 @@ function SuccessScreen({ onNew }: { onNew: () => void }) {
         ✓
       </div>
       <p style={{ fontSize: "1.125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-        Queued for sync
+        {t("app.queuedForSync")}
       </p>
       <p style={{ color: C.muted, fontSize: "0.875rem", marginBottom: "2rem" }}>
-        Data will upload automatically when connected.
+        {t("app.queuedForSyncBody")}
       </p>
       <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
         <button onClick={onNew} style={{
@@ -528,7 +533,7 @@ function SuccessScreen({ onNew }: { onNew: () => void }) {
           fontSize: "0.9375rem", fontWeight: 600, cursor: "pointer",
           letterSpacing: "0.01em", fontFamily: FONT,
         }}>
-          New patient
+          {t("app.newPatient")}
         </button>
       </div>
     </div>

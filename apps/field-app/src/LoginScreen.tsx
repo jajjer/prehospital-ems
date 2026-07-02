@@ -10,12 +10,14 @@ import { C, FONT } from "./theme.js";
 import { REST_BASE } from "./config.js";
 import { OAUTH2_CLIENT_ID, startOAuth2Login } from "./oauth2.js";
 import { SettingsScreen } from "./SettingsScreen.js";
+import { useT } from "./i18n/react.js";
 
 interface Props {
   onLogin: (authHeader: string) => void;
 }
 
 export function LoginScreen({ onLogin }: Props) {
+  const t = useT();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -47,10 +49,10 @@ export function LoginScreen({ onLogin }: Props) {
         await setAuthHeader(authHeader);
         onLogin(authHeader);
       } else {
-        setError("Invalid username or password.");
+        setError(t("login.invalidCredentials"));
       }
     } catch {
-      setError("Could not reach OpenMRS. Check network.");
+      setError(t("login.unreachable"));
     } finally {
       setLoading(false);
     }
@@ -75,11 +77,11 @@ export function LoginScreen({ onLogin }: Props) {
               letterSpacing: "0.08em", textTransform: "uppercase",
             }}>EMS</span>
             <span style={{ fontWeight: 700, fontSize: "1.125rem", color: C.text }}>
-              Field Capture
+              {t("common.appName")}
             </span>
           </div>
           <p style={{ color: C.muted, fontSize: "0.8125rem" }}>
-            {OAUTH2_CLIENT_ID ? "Sign in to continue" : "Sign in with your OpenMRS credentials"}
+            {OAUTH2_CLIENT_ID ? t("login.subtitle.continue") : t("login.subtitle.credentials")}
           </p>
         </div>
 
@@ -95,11 +97,11 @@ export function LoginScreen({ onLogin }: Props) {
                 fontFamily: FONT, letterSpacing: "0.02em",
               }}
             >
-              Sign in with OpenMRS
+              {t("login.withOpenMRS")}
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", margin: "1rem 0" }}>
               <div style={{ flex: 1, height: 1, background: C.border }} />
-              <span style={{ color: C.muted, fontSize: "0.75rem" }}>or use username and password</span>
+              <span style={{ color: C.muted, fontSize: "0.75rem" }}>{t("login.orUsernamePassword")}</span>
               <div style={{ flex: 1, height: 1, background: C.border }} />
             </div>
           </div>
@@ -111,7 +113,7 @@ export function LoginScreen({ onLogin }: Props) {
         }}>
           <div style={{ marginBottom: "1rem" }}>
             <label style={{ display: "block", fontSize: "0.75rem", color: C.muted, marginBottom: "0.375rem", fontWeight: 500 }}>
-              Username
+              {t("login.username")}
             </label>
             <input
               type="text" autoComplete="username" autoCapitalize="off"
@@ -122,7 +124,7 @@ export function LoginScreen({ onLogin }: Props) {
 
           <div style={{ marginBottom: "1.25rem" }}>
             <label style={{ display: "block", fontSize: "0.75rem", color: C.muted, marginBottom: "0.375rem", fontWeight: 500 }}>
-              Password
+              {t("login.password")}
             </label>
             <input
               type="password" autoComplete="current-password"
@@ -153,7 +155,7 @@ export function LoginScreen({ onLogin }: Props) {
               transition: "background 0.15s",
             }}
           >
-            {loading ? "Signing in…" : "Sign in"}
+            {loading ? t("login.signingIn") : t("login.signIn")}
           </button>
         </form>
 
@@ -167,7 +169,7 @@ export function LoginScreen({ onLogin }: Props) {
               textDecoration: "underline", padding: "0.25rem",
             }}
           >
-            Device settings
+            {t("login.deviceSettings")}
           </button>
         </div>
       </div>

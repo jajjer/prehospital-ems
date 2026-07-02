@@ -11,6 +11,8 @@ import { registerSW } from "virtual:pwa-register";
 import { flush, getDeviceId } from "@prehospital-ems/sync-engine";
 import { loadRuntimeConfig } from "./config.js";
 import { isEnrolled, refreshDeviceConfig } from "./provisioning.js";
+import { applyDocumentLocale } from "./i18n/index.js";
+import { I18nProvider } from "./i18n/react.js";
 import { App } from "./App.js";
 
 // The PHI at-rest key and app-lock state are provisioned by App via initAppLock:
@@ -35,6 +37,10 @@ if ("serviceWorker" in navigator) {
 const root = document.getElementById("root");
 if (!root) throw new Error("No #root element");
 
+// Set <html lang dir> from the saved/device locale before the first paint so RTL
+// languages (issue #16) lay out correctly from the very first frame.
+applyDocumentLocale();
+
 // Resolve the per-facility runtime config (issue #14) before the first render so
 // the OpenMRS base URL and location/concept UUIDs are correct for login and the
 // first capture. Offline, this falls back to the cached config applied at module
@@ -50,5 +56,11 @@ void loadRuntimeConfig()
     } catch { /* boot never blocks on provisioning */ }
   })
   .finally(() => {
-    createRoot(root).render(<StrictMode><App /></StrictMode>);
+    createRoot(root).render(
+      <StrictMode>
+        <I18nProvider>
+          <App />
+        </I18nProvider>
+      </StrictMode>,
+    );
   });
